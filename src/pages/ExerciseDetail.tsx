@@ -1,36 +1,50 @@
 import { useLiveQuery } from 'dexie-react-hooks';
+import { useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Icon } from '../components/Icon';
+import { Figure, targetFill } from '../components/BodyMap';
+import { Icon, type IconName } from '../components/Icon';
 import { LineChart } from '../components/LineChart';
+import { Sheet } from '../components/Sheet';
 import { EQUIPMENT_LABEL, db } from '../db/db';
 import { setPref } from '../db/repo';
 import { exerciseTrend } from '../engine/analytics';
-import { formatWeight, toDisplay } from '../engine/load';
+import { estimate1RM, formatWeight, toDisplay } from '../engine/load';
 import { MUSCLES } from '../engine/muscles';
 import { bestE1RM, groupSessions, isTimed } from '../engine/progression';
-import type { Loading, PerformedSet, Units } from '../engine/types';
+import type { ExercisePref, Loading, MuscleId, PerformedSet, Units } from '../engine/types';
 import { formatDate, useExercises, useProfile, useTrainingState } from '../hooks';
+import { CountUp } from '../ui/CountUp';
+import { EmptyState } from '../ui/EmptyState';
+import { haptics } from '../ui/haptics';
+import { toast } from '../ui/toast';
+import './ExerciseDetail.css';
 
-const CARD_TITLE = { fontSize: 17 } as const;
-const RECENT_SESSIONS = 10;
+const RECENT_SESSIONS = 6;
 
-const LOADING_LABEL: Record<Loading, string> = {
-  barbell: 'Barbell (total weight)',
-  dumbbell: 'Dumbbell (per hand)',
-  kettlebell: 'Kettlebell',
-  machine: 'Machine',
-  cable: 'Cable',
-  bodyweight: 'Bodyweight (+ optional load)',
-  band: 'Band',
+const LOADING_TAG: Partial<Record<Loading, string>> = {
+  barbell: 'Total bar weight',
+  dumbbell: 'Weight per hand',
+  kettlebell: 'Weight per bell',
+  bodyweight: 'Bodyweight',
 };
+
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const names = (ms: MuscleId[]) => ms.map((m) => MUSCLES[m].name).join(', ');
 
 function fmtNum(n: number): string {
   const r = Math.round(n * 10) / 10;
   return Number.isInteger(r) ? String(r) : r.toFixed(1);
 }
 
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
+function fmtDelta(pct: number): string {
+  const r = Math.round(pct);
+  if (r === 0) return '±0%';
+  return `${r > 0 ? '+' : '−'}${Math.abs(r)}%`;
+}
+
+function shortDate(at: number): string {
+  const sameYear = new Date(at).getFullYear() === new Date().getFullYear();
+  return formatDate(at, { month: 'short', day: 'numeric', year: sameYear ? undefined : 'numeric' });
 }
 
 /** "80 kg × 8, 8, 7 · 75 kg × 10" — consecutive sets at the same load are grouped. */
@@ -50,20 +64,35 @@ function describeSets(sets: PerformedSet[], units: Units, timed: boolean): strin
     .join(' · ');
 }
 
-function sessionDate(at: number): string {
-  const sameYear = new Date(at).getFullYear() === new Date().getFullYear();
-  return formatDate(at, { weekday: 'short', month: 'short', day: 'numeric', year: sameYear ? undefined : 'numeric' });
+/** The first set that beats every other on `score`, ties broken by heavier load. */
+function bestBy(sets: PerformedSet[], score: (s: PerformedSet) => number): PerformedSet | undefined {
+  let best: PerformedSet | undefined;
+  for (const s of sets) {
+    if (!best || score(s) > score(best) || (score(s) === score(best) && s.weightKg > best.weightKg)) best = s;
+  }
+  return best;
 }
 
-function Stat({ label, value, unit }: { label: string; value: string; unit?: string }) {
+interface PersonalRecord {
+  label: string;
+  value: ReactNode;
+  detail: string;
+  set: PerformedSet;
+}
+
+function WeightValue({ kg, units, reps, timed }: { kg: number; units: Units; reps?: number; timed?: boolean }) {
   return (
-    <div className="stat">
-      <span className="value">
-        {value}
-        {unit && <span className="small faint"> {unit}</span>}
-      </span>
-      <span className="label">{label}</span>
-    </div>
+    <>
+      {formatWeight(kg, units, false)}
+      <small>{units}</small>
+      {reps !== undefined && (
+        <>
+          <span className="exd-times">×</span>
+          {reps}
+          {timed && <small>s</small>}
+        </>
+      )}
+    </>
   );
 }
 
@@ -75,6 +104,14 @@ export function ExerciseDetail() {
   const state = useTrainingState();
   // null = no preference saved yet; undefined = still loading.
   const pref = useLiveQuery(async () => (await db.prefs.get(id)) ?? null, [id]);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [allSessions, setAllSessions] = useState(false);
+
+  if (!exercises || !profile || !state || pref === undefined) return null;
+
+  const ex = exercises.byId[id];
+  const history = state.sets.filter((s) => s.exerciseId === id && s.kind === 'working' && s.reps > 0);
+  const hasHistory = history.length > 0;
 
   const goBack = () => {
     // Deep links have no in-app history to return to; fall back to the library.
@@ -83,27 +120,28 @@ export function ExerciseDetail() {
     else navigate('/library', { replace: true });
   };
 
-  if (!exercises || !profile || !state || pref === undefined) return null;
-
   const backButton = (
     <button type="button" className="icon-btn" onClick={goBack} aria-label="Back">
       <Icon name="back" />
     </button>
   );
 
-  const ex = exercises.byId[id];
   if (!ex) {
     return (
       <div className="page">
-        <header className="row">{backButton}</header>
-        <div className="card empty">
-          <p style={{ fontWeight: 600, color: 'var(--text-1)' }}>Exercise not found</p>
-          <p className="small" style={{ marginTop: 4 }}>
+        <header className="exd-top">{backButton}</header>
+        <div className="card">
+          <EmptyState
+            icon="search"
+            title="Exercise not found"
+            action={
+              <Link to="/library" className="btn sm">
+                Browse exercises
+              </Link>
+            }
+          >
             It may have been deleted, or the link is out of date.
-          </p>
-          <Link to="/library" className="btn sm" style={{ marginTop: 16 }}>
-            Browse the library
-          </Link>
+          </EmptyState>
         </div>
       </div>
     );
@@ -111,184 +149,372 @@ export function ExerciseDetail() {
 
   const { units } = profile;
   const timed = isTimed(ex);
-  const history = state.sets.filter((s) => s.exerciseId === id && s.kind === 'working' && s.reps > 0);
-  const hasHistory = history.length > 0;
   // Timed work and sets with no added load (bodyweight, bands) are tracked by reps/seconds, not e1RM.
   const repsMode = timed || history.every((s) => s.weightKg <= 0);
-  const trend = hasHistory ? exerciseTrend(history) : [];
-  const sessions = hasHistory ? groupSessions(history) : [];
-  const heaviestKg = hasHistory ? Math.max(...history.map((s) => s.weightKg)) : 0;
-  const bestReps = hasHistory ? Math.max(...history.map((s) => s.reps)) : 0;
-  const bestE1rmKg = trend.reduce((a, p) => Math.max(a, p.e1rmKg), 0);
+  const trend = exerciseTrend(history);
+  const sessions = groupSessions(history);
+  const series = trend.map((p) => (repsMode ? p.bestReps : p.e1rmKg));
+  const first = series[0] ?? 0;
+  const last = series[series.length - 1] ?? 0;
+  const delta = series.length >= 2 && first > 0 ? (last / first - 1) * 100 : null;
 
-  const chartTitle = repsMode ? (timed ? 'Best hold (s)' : 'Best reps') : 'Estimated 1RM';
+  const bestSet = bestBy(history, (s) => (repsMode ? s.reps : estimate1RM(s.weightKg, s.reps)));
+  const bestE1rmKg = Math.max(0, ...trend.map((p) => p.e1rmKg));
+  const repLabel = timed ? 'Longest hold' : 'Most reps';
+
+  const records: PersonalRecord[] = [];
+  if (!repsMode) {
+    const e1 = bestBy(history, (s) => estimate1RM(s.weightKg, s.reps + (s.rir ?? 0)));
+    if (e1) {
+      records.push({
+        label: 'Best estimated 1RM',
+        value: <WeightValue kg={estimate1RM(e1.weightKg, e1.reps + (e1.rir ?? 0))} units={units} />,
+        detail: `${formatWeight(e1.weightKg, units)} × ${e1.reps}${e1.rir ? ` @ ${e1.rir} RIR` : ''}`,
+        set: e1,
+      });
+    }
+  }
+  const heaviest = bestBy(history, (s) => s.weightKg);
+  if (heaviest && heaviest.weightKg > 0) {
+    records.push({
+      label: repsMode ? 'Heaviest added load' : 'Heaviest weight',
+      value: <WeightValue kg={heaviest.weightKg} units={units} reps={heaviest.reps} timed={timed} />,
+      detail: '',
+      set: heaviest,
+    });
+  }
+  const mostReps = bestBy(history, (s) => s.reps);
+  if (mostReps) {
+    records.push({
+      label: repLabel,
+      value:
+        mostReps.weightKg > 0 ? (
+          <WeightValue kg={mostReps.weightKg} units={units} reps={mostReps.reps} timed={timed} />
+        ) : (
+          <>
+            {mostReps.reps}
+            <small>{timed ? 's' : 'reps'}</small>
+          </>
+        ),
+      detail: '',
+      set: mostReps,
+    });
+  }
+
+  // Sessions (oldest → newest) whose best beat everything before them.
+  const prSessions = new Set<string>();
+  let runningBest = 0;
+  for (const s of [...sessions].reverse()) {
+    const v = repsMode ? Math.max(...s.sets.map((x) => x.reps)) : bestE1RM(s.sets);
+    if (runningBest > 0 && v > runningBest) prSessions.add(s.workoutId);
+    runningBest = Math.max(runningBest, v);
+  }
+
+  const chartTitle = repsMode ? (timed ? 'Longest hold' : 'Best reps') : 'Estimated 1RM';
+  const chartUnit = repsMode ? (timed ? 'seconds' : 'reps') : units;
   const points = trend.map((p) => ({ x: p.at, y: repsMode ? p.bestReps : toDisplay(p.e1rmKg, units) }));
 
   const favorite = !!pref?.favorite;
   const excluded = !!pref?.excluded;
+  const updatePref = (patch: Partial<ExercisePref>, message: string, icon: IconName, accent = false) => {
+    haptics.tap();
+    void setPref(id, patch).then(() => toast(message, { icon, tone: accent ? 'accent' : 'default' }));
+  };
 
   const remove = async () => {
-    if (!window.confirm(`Delete “${ex.name}”? Sets you've already logged stay in your history.`)) return;
+    setConfirmDelete(false);
+    // Leave first so the page doesn't flash "not found" when the live query drops the exercise.
+    navigate('/library', { replace: true });
     await db.transaction('rw', db.customExercises, db.prefs, async () => {
       await db.customExercises.delete(id);
       await db.prefs.delete(id);
     });
-    goBack();
+    haptics.success();
+    toast(`Deleted ${ex.name}`, { icon: 'trash' });
   };
 
-  const meta = [capitalize(ex.mechanic), capitalize(ex.pattern.replace(/_/g, ' '))];
-  if (ex.unilateral) meta.push('Unilateral');
-  if (ex.custom) meta.push('Custom');
+  const tags = ex.equipment.length ? ex.equipment.map((e) => EQUIPMENT_LABEL[e]) : ['No equipment'];
+  const loadingTag = LOADING_TAG[ex.loading];
+  if (loadingTag) tags.push(loadingTag);
+  if (ex.unilateral) tags.push('Unilateral');
+  const fill = (m: MuscleId) => targetFill(m, ex.primary, ex.secondary);
+  const title = (m: MuscleId) =>
+    `${MUSCLES[m].name}${ex.primary.includes(m) ? ' · primary' : ex.secondary.includes(m) ? ' · secondary' : ''}`;
+  const shownSessions = allSessions ? sessions : sessions.slice(0, RECENT_SESSIONS);
 
   return (
-    <div className="page">
-      <header className="row" style={{ alignItems: 'flex-start', gap: 12 }}>
-        {backButton}
-        <div className="grow" style={{ paddingTop: 4 }}>
-          <h1 style={{ fontSize: 24, overflowWrap: 'anywhere' }}>{ex.name}</h1>
-          <div className="small faint" style={{ marginTop: 2 }}>
-            {meta.join(' · ')}
-          </div>
-        </div>
-      </header>
+    <div className="page exd-page">
+      <header className="exd-top">{backButton}</header>
 
-      <section className="card stack" style={{ gap: 14 }} aria-label="About this exercise">
-        <div className="stack" style={{ gap: 6 }}>
-          <span className="tiny faint">Primary</span>
-          <div className="row wrap" style={{ gap: 6 }}>
-            {ex.primary.map((m) => (
-              <span key={m} className="badge accent">
-                {MUSCLES[m].name}
-              </span>
-            ))}
-          </div>
+      <section className="card hero exd-hero" aria-labelledby="exd-title">
+        <p className="eyebrow">
+          {capitalize(ex.mechanic)} · {capitalize(ex.pattern.replace(/_/g, ' '))}
+        </p>
+        <h1 id="exd-title" className="exd-title">
+          {ex.name}
+        </h1>
+        <div className="exd-tags">
+          {ex.custom && <span className="badge accent">Custom</span>}
+          {tags.map((t) => (
+            <span key={t} className="badge">
+              {t}
+            </span>
+          ))}
         </div>
-        {ex.secondary.length > 0 && (
-          <div className="stack" style={{ gap: 6 }}>
-            <span className="tiny faint">Secondary</span>
-            <div className="row wrap" style={{ gap: 6 }}>
-              {ex.secondary.map((m) => (
-                <span key={m} className="badge">
-                  {MUSCLES[m].name}
-                </span>
-              ))}
+        <div className="exd-figures">
+          <figure>
+            <Figure view="front" fill={fill} title={title} label={`Front view. Works ${names(ex.primary)}`} />
+            <figcaption>Front</figcaption>
+          </figure>
+          <figure>
+            <Figure view="back" fill={fill} title={title} label={`Back view. Works ${names(ex.primary)}`} />
+            <figcaption>Back</figcaption>
+          </figure>
+        </div>
+        <dl className="exd-legend">
+          <div>
+            <dt>
+              <span className="exd-swatch primary" />
+              Primary
+            </dt>
+            <dd>{names(ex.primary)}</dd>
+          </div>
+          {ex.secondary.length > 0 && (
+            <div>
+              <dt>
+                <span className="exd-swatch secondary" />
+                Secondary
+              </dt>
+              <dd>{names(ex.secondary)}</dd>
             </div>
-          </div>
-        )}
-        <div className="stack" style={{ gap: 2 }}>
-          <span className="tiny faint">Equipment</span>
-          <span>{ex.equipment.length ? ex.equipment.map((e) => EQUIPMENT_LABEL[e]).join(', ') : 'Bodyweight'}</span>
-        </div>
-        <div className="stack" style={{ gap: 2 }}>
-          <span className="tiny faint">Loading</span>
-          <span>{LOADING_LABEL[ex.loading]}</span>
-        </div>
+          )}
+        </dl>
       </section>
 
-      <section className="card" style={{ paddingTop: 4, paddingBottom: 4 }} aria-label="Preferences">
-        <label className="toggle" style={{ paddingTop: 8, paddingBottom: 8 }}>
-          <span className="stack" style={{ gap: 0 }}>
-            <span style={{ fontWeight: 600 }}>Favorite</span>
-            <span className="small faint">Picked more often in generated workouts</span>
-          </span>
-          <input type="checkbox" checked={favorite} onChange={(e) => void setPref(id, { favorite: e.target.checked })} />
-        </label>
-        <label className="toggle" style={{ borderTop: '1px solid var(--border)', paddingTop: 8, paddingBottom: 8 }}>
-          <span className="stack" style={{ gap: 0 }}>
-            <span style={{ fontWeight: 600 }}>Hide from generated workouts</span>
-            <span className="small faint">You can still add it to a workout yourself</span>
-          </span>
-          <input type="checkbox" checked={excluded} onChange={(e) => void setPref(id, { excluded: e.target.checked })} />
-        </label>
-      </section>
+      {hasHistory && bestSet ? (
+        <>
+          <section className="card exd-stats" aria-label="Your bests">
+            <div className="stats">
+              {repsMode ? (
+                <div className="stat">
+                  <span className="value">
+                    <CountUp value={bestSet.reps} />
+                    <small>{timed ? 's' : 'reps'}</small>
+                  </span>
+                  <span className="label">{timed ? 'Longest hold' : 'Best reps'}</span>
+                </div>
+              ) : (
+                <div className="stat">
+                  <span className="value">
+                    <CountUp value={toDisplay(bestE1rmKg, units)} format={fmtNum} />
+                    <small>{units}</small>
+                  </span>
+                  <span className="label">Best e1RM</span>
+                </div>
+              )}
+              <div className="stat">
+                <span className="value">
+                  {bestSet.weightKg > 0 ? (
+                    <>
+                      {formatWeight(bestSet.weightKg, units, false)}
+                      <span className="exd-times">×</span>
+                      {bestSet.reps}
+                    </>
+                  ) : (
+                    history.length
+                  )}
+                </span>
+                <span className="label">{bestSet.weightKg > 0 ? `Best set, ${units}` : 'Total sets'}</span>
+              </div>
+              <div className="stat">
+                <span className="value">
+                  <CountUp value={sessions.length} />
+                </span>
+                <span className="label">Sessions</span>
+              </div>
+            </div>
+          </section>
+
+          <section className="card" aria-labelledby="exd-trend-title">
+            <div className="card-title exd-card-title">
+              <div>
+                <h2 id="exd-trend-title">{chartTitle}</h2>
+                <p className="small faint">
+                  {chartUnit} · best set each session
+                </p>
+              </div>
+              {delta !== null && (
+                <span className={`badge num${Math.round(delta) > 0 ? ' accent' : ''}`} aria-label={`${fmtDelta(delta)} since your first session`}>
+                  {fmtDelta(delta)}
+                </span>
+              )}
+            </div>
+            <LineChart points={points} height={180} label={`${chartTitle} per session`} formatY={fmtNum} />
+            {points.length < 2 && <p className="small faint exd-chart-hint">Log another session to see your trend.</p>}
+          </section>
+
+          <section className="stack exd-section" aria-labelledby="exd-pr-title">
+            <h2 id="exd-pr-title" className="section-title">
+              Personal records
+            </h2>
+            <div className="card exd-list-card">
+              <div className="list">
+                {records.map((r) => (
+                  <Link key={r.label} to={`/history/${encodeURIComponent(r.set.workoutId)}`} className="list-item exd-pr">
+                    <span className="exd-pr-icon">
+                      <Icon name="trophy" size={18} />
+                    </span>
+                    <span className="grow">
+                      <span className="exd-row-title">{r.label}</span>
+                      <span className="exd-row-meta">{[r.detail, shortDate(r.set.at)].filter(Boolean).join(' · ')}</span>
+                    </span>
+                    <span className="display exd-pr-value">{r.value}</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          <section className="stack exd-section" aria-labelledby="exd-sessions-title">
+            <h2 id="exd-sessions-title" className="section-title">
+              Recent sessions
+            </h2>
+            <div className="card exd-list-card">
+              <div className="list">
+                {shownSessions.map((s) => {
+                  const d = new Date(s.at);
+                  const best = repsMode ? Math.max(...s.sets.map((x) => x.reps)) : toDisplay(bestE1RM(s.sets), units);
+                  const pr = prSessions.has(s.workoutId);
+                  return (
+                    <Link key={s.workoutId} to={`/history/${encodeURIComponent(s.workoutId)}`} className="list-item exd-session">
+                      <span className="exd-date" aria-hidden="true">
+                        <span className="exd-date-m">{d.toLocaleDateString(undefined, { month: 'short' })}</span>
+                        <span className="display exd-date-d">{d.getDate()}</span>
+                      </span>
+                      <span className="grow">
+                        <span className="exd-row-title num">{describeSets(s.sets, units, timed)}</span>
+                        <span className="exd-row-meta">
+                          {formatDate(s.at, { weekday: 'long', month: 'short', day: 'numeric' })}
+                          {pr && (
+                            <span className="exd-pr-tag">
+                              <Icon name="trophy" size={12} /> PR
+                            </span>
+                          )}
+                        </span>
+                      </span>
+                      <span className="exd-session-best">
+                        <span className="display">{fmtNum(best)}</span>
+                        <span>{repsMode ? (timed ? 'sec' : 'reps') : 'e1RM'}</span>
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+              {sessions.length > RECENT_SESSIONS && (
+                <button type="button" className="btn ghost sm block exd-more" aria-expanded={allSessions} onClick={() => setAllSessions((v) => !v)}>
+                  {allSessions ? 'Show less' : `Show all ${sessions.length} sessions`}
+                  <Icon name={allSessions ? 'chevronUp' : 'chevronDown'} size={16} />
+                </button>
+              )}
+            </div>
+          </section>
+        </>
+      ) : (
+        <div className="card exd-empty">
+          <EmptyState icon="progress" title="No sets logged yet">
+            Add {ex.name} to a workout and your estimated 1RM, records and sessions will build up here.
+          </EmptyState>
+        </div>
+      )}
 
       {ex.cues.length > 0 && (
-        <section className="card" aria-labelledby="cues-title">
-          <div className="card-title">
-            <h2 id="cues-title" style={CARD_TITLE}>
-              Form cues
-            </h2>
+        <section className="card" aria-labelledby="exd-cues-title">
+          <div className="card-title exd-card-title">
+            <h2 id="exd-cues-title">Technique</h2>
           </div>
-          <ol className="stack muted" style={{ margin: 0, paddingLeft: 20 }}>
-            {ex.cues.map((c) => (
-              <li key={c}>{c}</li>
+          <ol className="exd-cues">
+            {ex.cues.map((c, i) => (
+              <li key={c}>
+                <span className="display exd-cue-n" aria-hidden="true">
+                  {i + 1}
+                </span>
+                <span>{c}</span>
+              </li>
             ))}
           </ol>
         </section>
       )}
 
-      {hasHistory ? (
-        <>
-          <section className="card" aria-label="Personal bests">
-            <div className="stats">
-              {repsMode ? (
-                <Stat label={timed ? 'Best hold' : 'Best reps'} value={String(bestReps)} unit={timed ? 's' : undefined} />
-              ) : (
-                <Stat label="Best e1RM" value={formatWeight(bestE1rmKg, units, false)} unit={units} />
-              )}
-              {heaviestKg > 0 ? (
-                <Stat label="Heaviest" value={formatWeight(heaviestKg, units, false)} unit={units} />
-              ) : (
-                <Stat label="Total sets" value={String(history.length)} />
-              )}
-              <Stat label="Sessions" value={String(sessions.length)} />
-            </div>
-          </section>
-
-          <section className="card" aria-labelledby="trend-title">
-            <div className="card-title">
-              <h2 id="trend-title" style={CARD_TITLE}>
-                {chartTitle}
-              </h2>
-              {!repsMode && <span className="small faint">{units}</span>}
-            </div>
-            <LineChart points={points} label={`${chartTitle} per session`} formatY={fmtNum} />
-            {points.length < 2 && (
-              <p className="small faint" style={{ marginTop: 8 }}>
-                Log another session to see your trend.
-              </p>
-            )}
-          </section>
-
-          <h2 className="section-title">Recent sessions</h2>
-          <div className="card" style={{ paddingTop: 4, paddingBottom: 4 }}>
-            <div className="list">
-              {sessions.slice(0, RECENT_SESSIONS).map((s) => (
-                <Link key={s.workoutId} to={`/history/${encodeURIComponent(s.workoutId)}`} className="list-item">
-                  <div className="grow">
-                    <div className="row between" style={{ alignItems: 'baseline' }}>
-                      <span style={{ fontWeight: 600 }}>{sessionDate(s.at)}</span>
-                      {!repsMode && (
-                        <span className="small faint num">e1RM {formatWeight(bestE1RM(s.sets), units)}</span>
-                      )}
-                    </div>
-                    <div className="small muted num" style={{ overflowWrap: 'anywhere' }}>
-                      {describeSets(s.sets, units, timed)}
-                    </div>
-                  </div>
-                  <span className="faint" style={{ display: 'inline-flex' }}>
-                    <Icon name="chevron" size={18} />
-                  </span>
-                </Link>
-              ))}
-            </div>
-          </div>
-          {sessions.length > RECENT_SESSIONS && (
-            <p className="small faint center">
-              Showing the last {RECENT_SESSIONS} of {sessions.length} sessions.
-            </p>
-          )}
-        </>
-      ) : (
-        <div className="card empty small">No sets logged yet. Your progress chart appears after your first session.</div>
-      )}
+      <section className="stack exd-section" aria-labelledby="exd-prefs-title">
+        <h2 id="exd-prefs-title" className="section-title">
+          Preferences
+        </h2>
+        <div className="group">
+          <label className="group-row toggle exd-toggle">
+            <span className={`row-icon${favorite ? ' exd-on' : ''}`}>
+              <Icon name="star" size={17} />
+            </span>
+            <span className="grow">
+              <span className="exd-row-title">Favorite</span>
+              <span className="exd-row-meta">Picked more often in generated workouts</span>
+            </span>
+            <input
+              type="checkbox"
+              checked={favorite}
+              onChange={(e) =>
+                updatePref(
+                  { favorite: e.target.checked },
+                  e.target.checked ? 'Added to favorites' : 'Removed from favorites',
+                  'star',
+                  e.target.checked,
+                )
+              }
+            />
+          </label>
+          <label className="group-row toggle exd-toggle">
+            <span className="row-icon">
+              <Icon name="eyeOff" size={17} />
+            </span>
+            <span className="grow">
+              <span className="exd-row-title">Hide from generated workouts</span>
+              <span className="exd-row-meta">You can still add it to a workout yourself</span>
+            </span>
+            <input
+              type="checkbox"
+              checked={excluded}
+              onChange={(e) =>
+                updatePref(
+                  { excluded: e.target.checked },
+                  e.target.checked ? 'Hidden from generated workouts' : 'Back in generated workouts',
+                  e.target.checked ? 'eyeOff' : 'eye',
+                )
+              }
+            />
+          </label>
+        </div>
+      </section>
 
       {ex.custom && (
-        <button type="button" className="btn danger block" onClick={() => void remove()}>
+        <button type="button" className="btn quiet danger block exd-delete" onClick={() => setConfirmDelete(true)}>
           <Icon name="trash" size={18} />
           Delete exercise
         </button>
       )}
+
+      <Sheet open={confirmDelete} onClose={() => setConfirmDelete(false)} title="Delete exercise?" subtitle={ex.name}>
+        <div className="stack lg">
+          <p className="muted">It disappears from the library and from generated workouts. Sets you've already logged stay in your history.</p>
+          <div className="stack">
+            <button type="button" className="btn danger block lg" onClick={() => void remove()}>
+              <Icon name="trash" size={18} />
+              Delete {ex.name}
+            </button>
+            <button type="button" className="btn ghost block" onClick={() => setConfirmDelete(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </Sheet>
     </div>
   );
 }

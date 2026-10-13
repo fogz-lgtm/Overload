@@ -113,6 +113,8 @@ export interface Profile {
   activeGymId: string;
   onboarded: boolean;
   createdAt: number;
+  /** Exploring generated sample data rather than a real log. */
+  demo?: boolean;
   ai?: { apiKey: string; model: string };
 }
 

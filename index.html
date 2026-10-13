@@ -3,13 +3,35 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#0e0f11" />
-    <meta name="description" content="Open-source, local-first strength coach." />
+    <meta name="theme-color" content="#08090b" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f2f2ee" media="(prefers-color-scheme: light)" />
+    <meta name="description" content="A free, open-source strength coach that plans every workout around your recovery." />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Overload" />
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="apple-touch-icon" href="apple-touch-icon.png" />
     <title>Overload</title>
+    <style>
+      /* Paint the brand before any JavaScript runs: no white flash, no blank screen. */
+      html, body { margin: 0; background: #08090b; }
+      @media (prefers-color-scheme: light) { html:not([data-theme='dark']), html:not([data-theme='dark']) body { background: #f2f2ee; } }
+      #root:empty {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #root:empty::before {
+        content: '';
+        width: 72px;
+        height: 72px;
+        border-radius: 18px;
+        background: url('favicon.svg') center / cover;
+        animation: splash 1.2s ease-in-out infinite alternate;
+      }
+      @keyframes splash { to { transform: scale(0.92); opacity: 0.7; } }
+    </style>
   </head>
   <body>
     <div id="root"></div>

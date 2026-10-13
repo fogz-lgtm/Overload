@@ -1,10 +1,38 @@
-import { useEffect, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Icon } from './Icon';
 
-/** Bottom sheet modal. Closes on backdrop tap and Escape. */
-export function Sheet({ open, onClose, title, children }: { open: boolean; onClose: () => void; title?: string; children: ReactNode }) {
+/**
+ * Bottom sheet. Closes on backdrop tap, Escape, the close button, or a
+ * downward drag from the top edge, animating out before it unmounts.
+ */
+export function Sheet({
+  open,
+  onClose,
+  title,
+  subtitle,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title?: string;
+  subtitle?: string;
+  children: ReactNode;
+}) {
+  const [closing, setClosing] = useState(false);
+  const sheet = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ y: number; t: number; dy: number } | null>(null);
+
+  const requestClose = useCallback(() => {
+    setClosing(true);
+    setTimeout(() => {
+      setClosing(false);
+      onClose();
+    }, 200);
+  }, [onClose]);
+
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && requestClose();
     window.addEventListener('keydown', onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -12,13 +40,57 @@ export function Sheet({ open, onClose, title, children }: { open: boolean; onClo
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = prev;
     };
-  }, [open, onClose]);
+  }, [open, requestClose]);
+
   if (!open) return null;
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (!sheet.current || sheet.current.scrollTop > 0) return;
+    drag.current = { y: e.clientY, t: performance.now(), dy: 0 };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!drag.current || !sheet.current) return;
+    const dy = Math.max(0, e.clientY - drag.current.y);
+    drag.current.dy = dy;
+    sheet.current.style.transition = 'none';
+    sheet.current.style.transform = `translateY(${dy}px)`;
+  };
+  const onPointerUp = () => {
+    const d = drag.current;
+    drag.current = null;
+    if (!d || !sheet.current) return;
+    const velocity = d.dy / Math.max(1, performance.now() - d.t);
+    sheet.current.style.transition = '';
+    if (d.dy > 110 || velocity > 0.6) requestClose();
+    else sheet.current.style.transform = '';
+  };
+
   return (
-    <div className="sheet-backdrop" onClick={onClose}>
-      <div className="sheet" role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}>
-        <div className="sheet-handle" />
-        {title && <h2 style={{ marginBottom: 12 }}>{title}</h2>}
+    <div className="sheet-backdrop" onClick={requestClose} style={closing ? { opacity: 0, transition: 'opacity 200ms' } : undefined}>
+      <div
+        ref={sheet}
+        className="sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        onClick={(e) => e.stopPropagation()}
+        style={closing ? { transform: 'translateY(100%)', transition: 'transform 200ms ease-in' } : undefined}
+      >
+        <div className="sheet-grab" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
+          <div className="sheet-handle" />
+          {title && (
+            <div className="sheet-head">
+              <div className="grow">
+                <h2>{title}</h2>
+                {subtitle && <p className="small faint" style={{ marginTop: 3 }}>{subtitle}</p>}
+              </div>
+              <button type="button" className="icon-btn sm" onClick={requestClose} aria-label="Close">
+                <Icon name="x" size={18} />
+              </button>
+            </div>
+          )}
+        </div>
         {children}
       </div>
     </div>

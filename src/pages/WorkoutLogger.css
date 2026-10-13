@@ -1,0 +1,352 @@
+.lg-page {
+  min-height: 100dvh;
+  animation: page-in var(--d3) var(--ease) backwards;
+}
+.lg-page.resting {
+  padding-bottom: 96px;
+}
+
+/* Sticky header with stopwatch and progress */
+.lg-head {
+  position: sticky;
+  top: 0;
+  z-index: 25;
+  padding: calc(env(safe-area-inset-top) + 8px) 10px 0;
+  background: color-mix(in oklab, var(--bg) 82%, transparent);
+  backdrop-filter: blur(24px) saturate(1.6);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  border-bottom: 1px solid var(--line);
+}
+.lg-head-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+}
+.lg-head-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.lg-clock {
+  font-size: 30px;
+}
+.lg-progress {
+  height: 3px;
+  margin: 0 -10px;
+  background: transparent;
+}
+.lg-progress span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-fill-2), var(--accent-fill));
+  box-shadow: 0 0 12px var(--accent-glow);
+  transition: width var(--d3) var(--ease);
+}
+
+.lg-body {
+  padding: 16px var(--gutter) calc(env(safe-area-inset-bottom) + 24px);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Exercise card */
+.lg-ex {
+  padding: 14px 14px 10px;
+  transition: border-color var(--d3) var(--ease), opacity var(--d3);
+}
+.lg-ex.current {
+  border-color: var(--accent-line);
+  box-shadow: var(--shadow-card), 0 0 0 1px var(--accent-line), 0 16px 40px -20px var(--accent-glow);
+}
+.lg-ex.complete {
+  padding-bottom: 14px;
+}
+.lg-ex.complete .lg-ex-name {
+  color: var(--text-2);
+}
+.lg-ex-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.lg-ex-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  padding: 0;
+  cursor: pointer;
+}
+.lg-ex-title .eyebrow {
+  display: block;
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lg-ex-name {
+  display: block;
+  font-weight: 680;
+  font-size: 16.5px;
+  letter-spacing: -0.015em;
+  margin: 2px 0 1px;
+}
+.lg-ex-check {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, var(--accent-fill), var(--accent-fill-2));
+  color: var(--accent-ink);
+  flex-shrink: 0;
+  animation: pop 420ms var(--spring) both;
+}
+.lg-cues {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-2);
+  font-size: 13.5px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lg-last,
+.lg-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  color: var(--text-3);
+}
+.lg-last strong {
+  color: var(--text-2);
+  font-weight: 600;
+}
+.lg-note {
+  color: var(--accent);
+  font-weight: 600;
+  animation: toast-in var(--d3) var(--spring) both;
+}
+
+/* Set table */
+.lg-table {
+  margin-top: 10px;
+}
+.lg-row {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) minmax(0, 1fr) 52px 48px;
+  gap: 7px;
+  align-items: center;
+  padding: 4px 0;
+  border-radius: var(--r-sm);
+}
+.lg-row-head {
+  font-size: 10.5px;
+  font-weight: 650;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0 0 2px;
+}
+.lg-row-head span {
+  text-align: center;
+}
+.lg-idx {
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 19px;
+  text-align: center;
+  padding: 0;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.lg-row.warmup .lg-idx {
+  color: var(--warning);
+  font-size: 16px;
+}
+.lg-row.done .lg-idx {
+  color: var(--accent);
+  cursor: default;
+}
+.lg-input {
+  width: 100%;
+  height: 48px;
+  min-width: 0;
+  text-align: center;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text-1);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+  padding: 0 4px;
+  transition: background var(--d2), border-color var(--d2), box-shadow var(--d2);
+}
+.lg-input::placeholder {
+  color: var(--text-3);
+  font-weight: 600;
+}
+.lg-input:focus {
+  outline: none;
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+  background: var(--surface-1);
+}
+select.lg-rir {
+  -webkit-appearance: none;
+  appearance: none;
+  font-size: 18px;
+  cursor: pointer;
+  text-align-last: center;
+}
+select.lg-rir.unset {
+  color: var(--text-3);
+}
+.lg-row.warmup .lg-input {
+  height: 42px;
+  font-size: 18px;
+  background: transparent;
+}
+.lg-row.now .lg-input {
+  border-color: var(--line-strong);
+  background: var(--surface-1);
+}
+.lg-row.done .lg-input {
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--text-1);
+}
+.lg-check {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--r-sm);
+  border: 1.5px solid var(--line-strong);
+  background: transparent;
+  color: var(--text-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background var(--d2), border-color var(--d2), color var(--d2), transform var(--d1);
+}
+.lg-check:active {
+  transform: scale(0.9);
+}
+.lg-row.now .lg-check {
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+.lg-row.warmup .lg-check {
+  height: 42px;
+}
+.lg-check.on {
+  border-color: transparent;
+  color: var(--accent-ink);
+  background: linear-gradient(180deg, var(--accent-fill), var(--accent-fill-2));
+  box-shadow: 0 6px 16px -6px var(--accent-glow);
+}
+.lg-check.on svg {
+  animation: pop 380ms var(--spring) both;
+}
+@keyframes pop {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.18);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.lg-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.lg-foot .btn {
+  margin-left: -10px;
+}
+
+/* All done */
+.lg-alldone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 24px 18px 18px;
+}
+.lg-alldone-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-ink);
+  background: linear-gradient(180deg, var(--accent-fill), var(--accent-fill-2));
+  box-shadow: var(--shadow-glow);
+  animation: pop 500ms var(--spring) both;
+}
+.lg-alldone .btn {
+  margin-top: 8px;
+}
+
+/* Rest timer */
+.lg-rest {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  justify-content: center;
+  padding: 0 10px calc(env(safe-area-inset-bottom) + 10px);
+  pointer-events: none;
+}
+.lg-rest-inner {
+  pointer-events: auto;
+  width: 100%;
+  max-width: calc(var(--maxw) - 20px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 8px 8px;
+  border-radius: 22px;
+  background: color-mix(in oklab, var(--surface-2) 92%, transparent);
+  backdrop-filter: blur(24px) saturate(1.5);
+  -webkit-backdrop-filter: blur(24px) saturate(1.5);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow-pop);
+  animation: sheet-up var(--d3) var(--spring) both;
+}
+.lg-rest-time {
+  font-size: 30px;
+}
+.lg-rest .icon-btn {
+  background: var(--surface-3);
+  border-color: transparent;
+  color: var(--text-1);
+}

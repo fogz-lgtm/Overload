@@ -4,6 +4,7 @@ import { App } from './App';
 import { UpdateBanner } from './components/UpdateBanner';
 import './pwa';
 import { applyTheme, getTheme } from './theme';
+import './fonts.css';
 import './styles.css';
 
 applyTheme(getTheme());

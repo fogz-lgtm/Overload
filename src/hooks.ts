@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { db } from './db/db';
 import { allExercises, exerciseMap, flattenSets } from './db/repo';
 import { computeRecovery, muscleFatigue } from './engine/recovery';
-import type { Exercise, PerformedSet, Profile, Workout } from './engine/types';
+import type { Activity, Exercise, PerformedSet, Profile, Workout } from './engine/types';
 import { weeklySets } from './engine/volume';
 
 export function useProfile(): Profile | undefined | null {
@@ -35,6 +35,7 @@ export function useNow(ms = 60_000): number {
 
 export interface TrainingState {
   workouts: Workout[];
+  activities: Activity[];
   sets: PerformedSet[];
   recovery: ReturnType<typeof computeRecovery>;
   fatigue: ReturnType<typeof muscleFatigue>;
@@ -52,6 +53,7 @@ export function useTrainingState(): TrainingState | undefined {
     const sets = flattenSets(workouts);
     return {
       workouts,
+      activities,
       sets,
       recovery: computeRecovery(sets, activities, ex.byId, now),
       fatigue: muscleFatigue(sets, activities, ex.byId, now),
@@ -64,6 +66,27 @@ export function formatDuration(ms: number): string {
   const min = Math.round(ms / 60_000);
   if (min < 60) return `${min} min`;
   return `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m`;
+}
+
+/** "~14h", "~3 days" — recovery estimates read better rounded to days past a day and a half. */
+export function formatEta(hours: number): string {
+  if (hours >= 36) return `~${Math.round(hours / 24)} days`;
+  return `~${Math.max(1, Math.round(hours))}h`;
+}
+
+/** Training volume with a thousands separator, compacted past 10k ("20.1k lb"). */
+export function formatVolume(kg: number, units: Profile['units']): string {
+  const v = units === 'kg' ? kg : kg * 2.20462262;
+  return `${v >= 10_000 ? `${(v / 1000).toFixed(1)}k` : Math.round(v).toLocaleString()} ${units}`;
+}
+
+/** Stopwatch format: 4:05, 1:02:09. */
+export function formatClock(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return h ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
 }
 
 export function formatDate(ts: number, opts: Intl.DateTimeFormatOptions = { weekday: 'short', month: 'short', day: 'numeric' }): string {

@@ -1,0 +1,143 @@
+.sum-page {
+  position: relative;
+  min-height: 100dvh;
+  padding: calc(env(safe-area-inset-top) + 28px) var(--gutter) calc(env(safe-area-inset-bottom) + 24px);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow: hidden;
+  animation: page-in var(--d3) var(--ease) backwards;
+}
+.sum-glow {
+  position: absolute;
+  inset: -20% -30% auto;
+  height: 420px;
+  background: radial-gradient(closest-side, var(--accent-glow), transparent);
+  opacity: 0.7;
+  pointer-events: none;
+}
+.sum-hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 8px 0 6px;
+}
+.sum-badge {
+  position: relative;
+  z-index: 1;
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-ink);
+  background: linear-gradient(180deg, var(--accent-fill), var(--accent-fill-2));
+  box-shadow: 0 0 0 10px var(--accent-soft), 0 20px 50px -10px var(--accent-glow);
+  margin-bottom: 10px;
+  animation: badge-in 700ms var(--spring) both;
+}
+@keyframes badge-in {
+  0% {
+    transform: scale(0.2) rotate(-25deg);
+    opacity: 0;
+  }
+  100% {
+    transform: none;
+  }
+}
+.sum-title {
+  font-family: var(--display);
+  font-weight: 700;
+  font-style: italic;
+  font-size: 50px;
+  line-height: 0.9;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+.sum-stats {
+  position: relative;
+  padding: 16px 14px;
+}
+.sum-stats .value {
+  font-size: 28px;
+}
+.sum-pr {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid color-mix(in oklab, var(--pr) 35%, transparent);
+  background: linear-gradient(90deg, color-mix(in oklab, var(--pr) 12%, var(--surface-1)), var(--surface-1));
+  animation: toast-in var(--d3) var(--spring) both;
+}
+.sum-pr-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--pr);
+  background: color-mix(in oklab, var(--pr) 16%, transparent);
+  flex-shrink: 0;
+}
+.sum-figures {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 0 28px;
+}
+.sum-figures svg {
+  width: 100%;
+  max-height: 230px;
+}
+.sum-figures .muscle {
+  stroke: var(--surface-1);
+  stroke-width: 1.2;
+  cursor: default;
+}
+.sum-actions {
+  margin-top: 4px;
+}
+
+/* Confetti */
+.sum-confetti {
+  position: absolute;
+  top: 50px;
+  left: 50%;
+  width: 0;
+  height: 0;
+  z-index: 0;
+}
+.sum-confetti i {
+  position: absolute;
+  width: 8px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--c);
+  opacity: 0;
+  animation: confetti 1.5s var(--ease) forwards;
+}
+.sum-confetti i:nth-child(3n) {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+@keyframes confetti {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0) scale(0.6);
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--x), var(--y)) rotate(var(--r)) scale(1);
+  }
+}

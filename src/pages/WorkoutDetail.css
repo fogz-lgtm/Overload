@@ -1,0 +1,401 @@
+.wd-top {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+/* ── Hero ───────────────────────────────────────────────────────────────── */
+.wd-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 2px;
+}
+.wd-hero .tag {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.wd-hero .tag::before {
+  width: 8px;
+  height: 8px;
+}
+.wd-title {
+  font-family: var(--display);
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 0.95;
+  letter-spacing: 0.002em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+.wd-when {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+
+/* ── Summary card ───────────────────────────────────────────────────────── */
+.card.wd-summary {
+  padding: 0;
+  overflow: hidden;
+}
+.wd-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.wd-stats .stat {
+  padding: 16px 18px 15px;
+  gap: 6px;
+}
+.wd-stats .stat:nth-child(even) {
+  border-left: 1px solid var(--line);
+}
+.wd-stats .stat:nth-child(n + 3) {
+  border-top: 1px solid var(--line);
+}
+.wd-stats .stat .value {
+  font-size: 38px;
+  white-space: nowrap;
+}
+.wd-stats .stat.gold .value {
+  color: var(--pr);
+}
+
+.wd-muscles {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  padding: 16px 18px 18px;
+  border-top: 1px solid var(--line);
+}
+.wd-figures {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+}
+.wd-figures svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.wd-figures .muscle {
+  stroke: var(--surface-1);
+  stroke-width: 1;
+}
+.wd-muscle-list .eyebrow {
+  margin-bottom: 8px;
+}
+.wd-muscle-list ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wd-muscle-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: 8px;
+  row-gap: 4px;
+}
+.wd-muscle-name {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wd-muscle-n {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 17px;
+  line-height: 1;
+}
+.wd-muscle-bar {
+  grid-column: 1 / -1;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.wd-muscle-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+}
+.wd-muscle-note {
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--text-3);
+  line-height: 1.35;
+}
+
+.wd-why {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 14px 18px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.wd-why svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--text-3);
+}
+
+/* ── Records ────────────────────────────────────────────────────────────── */
+.card.wd-pr {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: var(--r-md);
+  border-color: color-mix(in oklab, var(--pr) 32%, transparent);
+  background:
+    radial-gradient(90% 120% at 0% 0%, color-mix(in oklab, var(--pr) 13%, transparent), transparent 70%),
+    var(--surface-1);
+  animation: wd-pop var(--d3) var(--spring) backwards;
+}
+.card.wd-pr + .card.wd-pr {
+  animation-delay: 60ms;
+}
+@keyframes wd-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+.wd-pr-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--pr);
+  background: color-mix(in oklab, var(--pr) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--pr) 30%, transparent);
+}
+.wd-pr-name {
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+.wd-pr-text {
+  font-size: 13px;
+  color: var(--text-2);
+  margin-top: 2px;
+}
+.wd-pr-text strong {
+  color: var(--text-1);
+  font-weight: 650;
+}
+.wd-pr-also {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+.wd-pr-gain {
+  font-size: 26px;
+  color: var(--pr);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.wd-pr-gain small {
+  font-size: 0.55em;
+  margin-left: 2px;
+  font-weight: 600;
+}
+
+/* ── Exercises ──────────────────────────────────────────────────────────── */
+.wd-count {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12px;
+}
+.card.wd-ex {
+  padding: 16px;
+}
+.wd-ex-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.wd-ex-name {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--text-1);
+  min-width: 0;
+}
+.wd-ex-name h3,
+h3.wd-ex-name {
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+.wd-ex-name svg {
+  flex-shrink: 0;
+  color: var(--text-3);
+}
+.wd-ex-meta {
+  font-size: 13px;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+
+.wd-sets {
+  width: 100%;
+  border-collapse: collapse;
+}
+.wd-sets th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  padding: 0 0 6px;
+}
+.wd-sets th abbr {
+  text-decoration: none;
+}
+.wd-sets td {
+  padding: 7px 0;
+  border-top: 1px solid var(--line);
+  vertical-align: middle;
+}
+.wd-sets th:first-child,
+.wd-sets td:first-child {
+  width: 40px;
+  padding-left: 8px;
+}
+.wd-sets .wd-rir {
+  width: 44px;
+  text-align: right;
+  padding-right: 8px;
+}
+.wd-set-n {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text-3);
+}
+.wd-set-n abbr {
+  text-decoration: none;
+}
+.wd-load {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 21px;
+  line-height: 1;
+  letter-spacing: 0.005em;
+}
+.wd-load small {
+  font-size: 0.6em;
+  font-weight: 600;
+  color: var(--text-3);
+  margin-left: 2px;
+}
+.wd-x {
+  margin: 0 6px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+.wd-bw {
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  margin-right: 4px;
+}
+td.wd-rir {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.wd-sets tr.warm .wd-load {
+  font-size: 16px;
+  color: var(--text-3);
+}
+.wd-sets tr.warm .wd-set-n {
+  color: var(--warning);
+}
+.wd-sets tr.warm td.wd-rir {
+  color: var(--text-3);
+}
+/* Best set: a soft inset band, no colour shouting. */
+.wd-sets tr.best td {
+  background: var(--surface-2);
+  border-top-color: transparent;
+}
+.wd-sets tr.best + tr td {
+  border-top-color: transparent;
+}
+.wd-sets tr.best td:first-child {
+  border-radius: 10px 0 0 10px;
+  color: var(--accent);
+}
+.wd-sets tr.best td:last-child {
+  border-radius: 0 10px 10px 0;
+}
+.wd-best {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--accent);
+  background: var(--accent-soft);
+  vertical-align: 2px;
+  white-space: nowrap;
+}
+.wd-ex-note,
+.wd-notes p {
+  white-space: pre-wrap;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.wd-ex-note {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-size: 13.5px;
+}
+.card.wd-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ── Actions ────────────────────────────────────────────────────────────── */
+.wd-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  margin-top: 8px;
+}
+.wd-hint {
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-3);
+  margin: 10px 0 18px;
+}
+.wd-actions .btn.ghost {
+  min-height: 44px;
+  font-size: 14px;
+}

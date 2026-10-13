@@ -1,0 +1,238 @@
+.today-title {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 40px;
+  line-height: 0.95;
+  letter-spacing: 0.005em;
+  text-transform: uppercase;
+  margin-top: 8px;
+}
+.today-demo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px 8px 14px;
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+  border: 1px dashed var(--accent-line);
+  color: var(--accent);
+}
+.today-demo .grow {
+  color: var(--text-1);
+}
+.today-streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 650;
+  color: var(--text-1);
+}
+.today-streak svg {
+  color: var(--fatigue);
+}
+
+/* Plan card */
+.today-plan {
+  padding: 20px;
+}
+.today-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 16px;
+}
+.today-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px 5px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.today-meta svg {
+  color: var(--accent);
+}
+.today-why {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-top: 14px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 13.5px;
+  color: var(--text-2);
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+}
+.today-why svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--accent);
+}
+.today-why span {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.today-why.open span {
+  -webkit-line-clamp: unset;
+}
+.today-list {
+  list-style: none;
+  margin: 14px -8px 0;
+  padding: 0;
+}
+.today-ex {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 8px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--d2);
+}
+.today-ex:hover,
+.today-ex:active {
+  background: var(--highlight);
+}
+.today-ex-idx {
+  width: 16px;
+  font-size: 18px;
+  color: var(--text-3);
+  text-align: center;
+  flex-shrink: 0;
+}
+.today-ex-name {
+  display: block;
+  font-weight: 620;
+  font-size: 15px;
+}
+.today-ex-target {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+.today-ex-target .display {
+  font-size: 21px;
+}
+.today-actions {
+  margin-top: 16px;
+  gap: 10px;
+}
+.today-actions .icon-btn {
+  width: 56px;
+  height: 56px;
+}
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Exercise preview */
+.today-figures {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 8px 24px 0;
+}
+.today-figures svg {
+  width: 100%;
+  max-height: 220px;
+}
+.today-figures .muscle {
+  stroke: var(--bg-raised);
+  stroke-width: 1.2;
+  cursor: default;
+}
+.rationale {
+  font-size: 14px;
+  color: var(--text-1);
+  line-height: 1.5;
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent-fill);
+  border-radius: var(--r-sm);
+  padding: 12px 14px;
+}
+.today-cues {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: cue;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.today-cues li {
+  counter-increment: cue;
+  display: flex;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--text-2);
+}
+.today-cues li::before {
+  content: counter(cue);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--accent);
+  width: 14px;
+  line-height: 1.1;
+}
+
+/* Readiness */
+.today-fatigue {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.today-fatigue-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.today-fatigue-row .bar {
+  height: 6px;
+}
+
+/* Activity kinds */
+.today-kinds {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.today-kinds .option-card {
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 8px;
+}
+.today-kinds .option-card strong {
+  font-size: 14px;
+}
+.today-kinds .option-card svg {
+  color: var(--text-2);
+}
+.today-kinds .option-card[aria-pressed='true'] svg {
+  color: var(--accent);
+}
