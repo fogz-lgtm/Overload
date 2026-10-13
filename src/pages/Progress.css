@@ -27,10 +27,10 @@
   letter-spacing: -0.02em;
 }
 .progress-title-stack {
-  align-items: flex-start;
+  margin-bottom: 4px;
 }
-.progress-title-stack p {
-  margin-top: 3px;
+.progress-card-sub {
+  margin-bottom: 16px;
 }
 .progress-more {
   margin-top: 10px;
@@ -42,7 +42,7 @@
 .progress-hero-top {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: clamp(14px, 4.5vw, 22px);
 }
 .progress-ring-num {
   font-size: 52px;
@@ -63,7 +63,7 @@
   gap: 6px;
 }
 .progress-level {
-  font-size: 26px;
+  font-size: clamp(20px, 6vw, 26px);
   font-weight: 800;
   letter-spacing: -0.03em;
   line-height: 1.05;
@@ -314,8 +314,9 @@
 .progress-vol-row.on-track .progress-vol-status {
   color: var(--accent);
 }
+/* Pulled toward the ink so amber text stays legible on white in light mode. */
 .progress-vol-row.high .progress-vol-status {
-  color: var(--warning);
+  color: color-mix(in oklab, var(--warning) 72%, var(--text-1));
 }
 .progress-vol-track {
   position: relative;

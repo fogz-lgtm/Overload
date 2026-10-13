@@ -5,7 +5,7 @@ import { BodyMap, MuscleThumb } from '../components/BodyMap';
 import { Icon } from '../components/Icon';
 import { db } from '../db/db';
 import { LEVELS, LIFT_NAMES, exerciseTrend, strengthScore, weekStreak } from '../engine/analytics';
-import { estimate1RM, formatWeight, toDisplay } from '../engine/load';
+import { estimate1RM, formatWeight, formatWeightWhole, toDisplay } from '../engine/load';
 import { MUSCLES, MUSCLE_IDS, PRIORITY_MUSCLES, weeklySetTarget } from '../engine/muscles';
 import { isTimed } from '../engine/progression';
 import { hoursUntilRecovered } from '../engine/recovery';
@@ -102,7 +102,7 @@ function StrengthHero({ sets, profile, byId, now }: { sets: PerformedSet[]; prof
               <p className="progress-level">{score.level}</p>
               {next ? (
                 <p className="progress-next">
-                  Next: <strong>{next}</strong> at {nextAt}
+                  Next: <strong>{next}</strong> at&nbsp;{nextAt}
                   <span className="progress-togo num">{plural(nextAt - overall, 'point')} to go</span>
                 </p>
               ) : (
@@ -141,7 +141,7 @@ function StrengthHero({ sets, profile, byId, now }: { sets: PerformedSet[]; prof
                   </div>
                   <div className="progress-lift-body">
                     <div className="progress-lift-figures">
-                      <span className="display progress-lift-e1rm">{formatWeight(l.e1rmKg, units, false)}</span>
+                      <span className="display progress-lift-e1rm">{formatWeightWhole(l.e1rmKg, units, false)}</span>
                       <span className="progress-unit">{units}</span>
                       <span className="progress-lift-ratio num">{l.ratio.toFixed(2)}× BW</span>
                     </div>
@@ -161,7 +161,7 @@ function StrengthHero({ sets, profile, byId, now }: { sets: PerformedSet[]; prof
             })}
           </ul>
           <p className="progress-foot">
-            Best estimated 1RM in the last 6 months, rated against approximate standards for a {formatWeight(bodyweightKg, units)} lifter.
+            Best estimated 1RM in the last 6 months, rated against approximate standards for a {formatWeightWhole(bodyweightKg, units)} lifter.
           </p>
         </>
       )}
@@ -378,14 +378,14 @@ function VolumeCard({ weekly, goal }: { weekly: TrainingState['weekly']; goal: G
   return (
     <section className="card" aria-labelledby="progress-volume">
       <div className="card-title progress-title-stack">
-        <div>
-          <h2 id="progress-volume" className="progress-card-h">
-            Weekly volume
-          </h2>
-          <p className="small faint">Hard sets, last 7 days · shaded band is your {goal} target</p>
-        </div>
-        <span className={`badge${under ? '' : ' accent'}`}>{under ? `${under} under` : 'All on target'}</span>
+        <h2 id="progress-volume" className="progress-card-h">
+          Weekly volume
+        </h2>
+        <span className={`badge${under ? '' : ' accent'}`}>{under ? `${under} under target` : 'All on target'}</span>
       </div>
+      <p className="small faint progress-card-sub">
+        Hard sets in the last 7 days. The shaded band is your {goal} target.
+      </p>
       <ul className="progress-vol">
         {shown.map((r) => {
           const scale = Math.max(r.max * 1.3, r.done * 1.08, 1);
@@ -455,7 +455,7 @@ function RecoveryCard({ recovery, fatigue }: { recovery: TrainingState['recovery
             </span>
           </>
         ) : (
-          <span className="faint">Tap a muscle to see how recovered it is</span>
+          <span className="faint">Tap a muscle for its recovery</span>
         )}
       </div>
       {mostFatigued.length > 0 ? (

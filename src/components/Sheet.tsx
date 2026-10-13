@@ -16,7 +16,8 @@ export function Sheet({
   onClose: () => void;
   title?: string;
   subtitle?: string;
-  children: ReactNode;
+  /** Pass a function to get an animated `close` for buttons inside the sheet. */
+  children: ReactNode | ((close: () => void) => ReactNode);
 }) {
   const [closing, setClosing] = useState(false);
   const sheet = useRef<HTMLDivElement>(null);
@@ -91,7 +92,7 @@ export function Sheet({
             </div>
           )}
         </div>
-        {children}
+        {typeof children === 'function' ? children(requestClose) : children}
       </div>
     </div>
   );

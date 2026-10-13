@@ -157,3 +157,23 @@ describe('autoregulate', () => {
     expect(autoregulate(sets, 0, pullUp, 'kg').note).toBeUndefined();
   });
 });
+
+describe('barbell minimum', () => {
+  const ohp = { ...bench, id: 'barbell-overhead-press', name: 'Barbell Overhead Press', bwRatio: 0.3, primary: ['front_delts' as const] };
+  const light = { ...profile, units: 'lb' as const, bodyweightKg: 55, experience: 'beginner' as const, goal: 'strength' as const };
+
+  it('never prescribes less than the empty bar', () => {
+    const rx = prescribe({ exercise: ohp, history: [], profile: light, sets: 3, now: NOW });
+    expect(rx.weightKg).toBeCloseTo(20.41, 1); // 45 lb
+    expect(rx.rationale).toMatch(/empty bar/);
+  });
+
+  it('does not autoregulate below the bar', () => {
+    const sets: import('./types').SetEntry[] = [
+      { id: 'a', kind: 'working', targetWeightKg: 20.41, targetReps: 8, targetRir: 2, weightKg: 20.41, reps: 3, rir: 0, done: true },
+      { id: 'b', kind: 'working', targetWeightKg: 20.41, targetReps: 8, targetRir: 2, done: false },
+    ];
+    const r = autoregulate(sets, 0, ohp, 'lb');
+    expect(r.sets[1]!.targetWeightKg).toBeCloseTo(20.41, 1);
+  });
+});

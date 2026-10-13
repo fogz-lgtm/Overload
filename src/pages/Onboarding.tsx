@@ -12,24 +12,24 @@ import { Ring } from '../ui/Ring';
 import './Onboarding.css';
 
 const GOALS: { id: Goal; title: string; body: string; icon: IconName }[] = [
-  { id: 'hypertrophy', title: 'Build muscle', body: '6–15 reps and more weekly volume.', icon: 'muscle' },
-  { id: 'strength', title: 'Get stronger', body: 'Heavy compounds, 3–6 reps, longer rest.', icon: 'dumbbell' },
-  { id: 'general', title: 'General fitness', body: 'Balanced sessions that fit around life.', icon: 'heart' },
-  { id: 'endurance', title: 'Muscular endurance', body: 'Higher reps, short rest. Pairs well with running.', icon: 'repeat' },
+  { id: 'hypertrophy', title: 'Build muscle', body: '6–15 reps, more weekly volume', icon: 'muscle' },
+  { id: 'strength', title: 'Get stronger', body: 'Heavy compounds, 3–6 reps', icon: 'dumbbell' },
+  { id: 'general', title: 'General fitness', body: 'Balanced, efficient sessions', icon: 'heart' },
+  { id: 'endurance', title: 'Muscular endurance', body: 'High reps, short rest', icon: 'repeat' },
 ];
 
 const LEVELS: { id: Experience; title: string; body: string }[] = [
-  { id: 'beginner', title: 'New to lifting', body: 'Less than a year of consistent training.' },
-  { id: 'intermediate', title: 'Some experience', body: '1–3 years. Comfortable with the main lifts.' },
-  { id: 'advanced', title: 'Experienced', body: '3+ years. Progress now comes slowly.' },
+  { id: 'beginner', title: 'New to lifting', body: 'Less than a year of training' },
+  { id: 'intermediate', title: 'Some experience', body: '1–3 years, know the main lifts' },
+  { id: 'advanced', title: 'Experienced', body: '3+ years, progress comes slowly' },
 ];
 
 const PRESET_INFO: Record<string, { icon: IconName; body: string }> = {
-  'Commercial gym': { icon: 'gym', body: 'Racks, barbells, cables and machines.' },
-  'Home gym': { icon: 'home', body: 'Barbell, rack, bench, dumbbells and a pull-up bar.' },
-  'Dumbbells only': { icon: 'dumbbell', body: 'A set of dumbbells and a bench.' },
-  'Hotel gym': { icon: 'suitcase', body: 'Dumbbells, a bench, cables and a few machines.' },
-  Bodyweight: { icon: 'user', body: 'Just you and a pull-up bar.' },
+  'Commercial gym': { icon: 'gym', body: 'Racks, barbells, cables, machines' },
+  'Home gym': { icon: 'home', body: 'Barbell, rack, bench, dumbbells' },
+  'Dumbbells only': { icon: 'dumbbell', body: 'Dumbbells and a bench' },
+  'Hotel gym': { icon: 'suitcase', body: 'Dumbbells, cables, a few machines' },
+  Bodyweight: { icon: 'user', body: 'Just you and a pull-up bar' },
 };
 
 const STANDARDS: { id: Sex; label: string; note: string }[] = [
@@ -115,23 +115,29 @@ export function Onboarding() {
     haptics.success();
     await wait(1700);
     const gymId = uid();
-    await db.transaction('rw', db.gyms, db.profile, async () => {
-      await db.gyms.put({ id: gymId, name: presetName, equipment });
-      await db.profile.put({
-        id: 'me',
-        name: name.trim(),
-        units,
-        bodyweightKg: fromDisplay(bw, units),
-        sex,
-        experience,
-        goal,
-        daysPerWeek: days,
-        sessionMinutes: minutes,
-        activeGymId: gymId,
-        onboarded: true,
-        createdAt: Date.now(),
+    try {
+      // Saving the profile hands over to the main app; this page only resumes on failure.
+      await db.transaction('rw', db.gyms, db.profile, async () => {
+        await db.gyms.put({ id: gymId, name: presetName, equipment });
+        await db.profile.put({
+          id: 'me',
+          name: name.trim(),
+          units,
+          bodyweightKg: fromDisplay(bw, units),
+          sex,
+          experience,
+          goal,
+          daysPerWeek: days,
+          sessionMinutes: minutes,
+          activeGymId: gymId,
+          onboarded: true,
+          createdAt: Date.now(),
+        });
       });
-    });
+    } catch {
+      setBuilding(false);
+      setSaving(false);
+    }
   }
 
   const toggleEquipment = (e: Equipment) =>
@@ -152,7 +158,7 @@ export function Onboarding() {
   const standard = STANDARDS.find((s) => s.id === sex)!;
 
   return (
-    <div className="onboard ob">
+    <main className="onboard ob">
       {step > 0 && (
         <div className="ob-top">
           <button type="button" className="icon-btn" aria-label="Back" onClick={() => go(step - 1)}>
@@ -344,7 +350,7 @@ export function Onboarding() {
         )}
         {step === LAST && !valid && <p className="ob-hint small faint">Enter your bodyweight to continue</p>}
       </footer>
-    </div>
+    </main>
   );
 }
 
@@ -443,7 +449,7 @@ function Building({ tags }: { tags: string[] }) {
   }, []);
   const done = phase >= BUILD_CHECKS.length;
   return (
-    <div className="onboard ob ob-build" role="status" aria-live="polite">
+    <main className="onboard ob ob-build" role="status" aria-live="polite">
       <div className="ob-build-ring">
         <Ring value={1} size={148} stroke={7} label="Building your first workout">
           <span className={`ob-build-mark${done ? ' done' : ''}`}>{done ? <Icon name="check" size={34} /> : <Logo size={60} />}</span>
@@ -470,6 +476,6 @@ function Building({ tags }: { tags: string[] }) {
           </li>
         ))}
       </ul>
-    </div>
+    </main>
   );
 }

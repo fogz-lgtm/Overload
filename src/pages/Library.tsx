@@ -92,6 +92,28 @@ function guessLoading(equipment: Equipment[]): Loading {
   return 'bodyweight';
 }
 
+const NAME_EQUIPMENT: [RegExp, Equipment][] = [
+  [/cable|pulldown|pushdown|face pull|crossover/, 'cable'],
+  [/dumbbell|\bdb\b/, 'dumbbells'],
+  [/kettlebell|\bkb\b/, 'kettlebells'],
+  [/smith/, 'smith_machine'],
+  [/leg press/, 'leg_press'],
+  [/trap.?bar|hex bar/, 'trap_bar'],
+  [/\bez\b|ez.?bar/, 'ez_bar'],
+  [/barbell|\bbb\b/, 'barbell'],
+  [/machine|pec deck|leg extension|leg curl/, 'machines'],
+  [/\bbands?\b/, 'bands'],
+  [/pull.?up|chin.?up|hanging/, 'pullup_bar'],
+  [/\bdips?\b/, 'dip_station'],
+  [/bench|incline|decline/, 'bench'],
+];
+
+/** Equipment a name implies ("Incline dumbbell press" → dumbbells + bench). */
+function suggestEquipment(name: string): Equipment[] {
+  const n = name.toLowerCase();
+  return ALL_EQUIPMENT.filter((eq) => NAME_EQUIPMENT.some(([re, item]) => item === eq && re.test(n)));
+}
+
 function toggle<T>(list: T[], item: T): T[] {
   return list.includes(item) ? list.filter((x) => x !== item) : [...list, item];
 }
@@ -209,17 +231,22 @@ function MuscleSummary({ muscle, items, goal }: { muscle: MuscleId; items: Exerc
   const compound = items.filter((e) => e.mechanic === 'compound').length;
   const { min, max } = weeklySetTarget(muscle, goal);
   const fill = (m: MuscleId) => targetFill(m, [muscle], []);
+  // Crop to the half of the body the muscle lives in so it reads at this size.
+  const viewBox = MUSCLES[muscle].region === 'legs' ? '22 112 76 132' : '12 4 96 128';
   return (
     <section className="card lib-muscle" aria-label={`${MUSCLES[muscle].name} overview`}>
       <div className="lib-muscle-figs" aria-hidden="true">
-        <Figure view="front" fill={fill} label="Front" viewBox="10 0 100 252" />
-        <Figure view="back" fill={fill} label="Back" viewBox="10 0 100 252" />
+        <Figure view="front" fill={fill} label="Front" viewBox={viewBox} />
+        <Figure view="back" fill={fill} label="Back" viewBox={viewBox} />
       </div>
       <div className="lib-muscle-text">
         <span className="eyebrow">Primary muscle</span>
         <h2>{MUSCLES[muscle].name}</h2>
         <p className="small muted num">
-          {items.length} {items.length === 1 ? 'exercise' : 'exercises'} · {compound} compound
+          <span className="lib-nowrap">
+            {items.length} {items.length === 1 ? 'exercise' : 'exercises'}
+          </span>{' '}
+          · <span className="lib-nowrap">{compound} compound</span>
         </p>
         <p className="small faint">
           {min > 0 ? `Aim for ${min}–${max} hard sets a week.` : `Up to ${max} direct sets a week; compound lifts already train it.`}
@@ -233,12 +260,12 @@ function MuscleSummary({ muscle, items, goal }: { muscle: MuscleId; items: Exerc
 
 function NewExerciseSheet({
   initialName,
-  existingNames,
+  existing,
   onClose,
   onSaved,
 }: {
   initialName: string;
-  existingNames: Set<string>;
+  existing: Map<string, Exercise>;
   onClose: () => void;
   onSaved: (id: string) => void;
 }) {
@@ -246,21 +273,23 @@ function NewExerciseSheet({
   const [name, setName] = useState(initialName);
   const [primaryChoice, setPrimary] = useState<MuscleId | null>(null);
   const [secondaryChoice, setSecondary] = useState<MuscleId[] | null>(null);
-  const [equipment, setEquipment] = useState<Equipment[]>([]);
+  const [equipmentChoice, setEquipment] = useState<Equipment[] | null>(null);
   const [loadingChoice, setLoading] = useState<Loading | null>(null);
   const [mechanicChoice, setMechanic] = useState<Mechanic | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Until the user picks, muscles and type follow what the name suggests ("Cable lateral raise" → side delts, isolation).
+  // Until the user picks, muscles, equipment and type follow the name ("Cable lateral raise" → side delts, cable, isolation).
   const trimmed = name.trim();
   const guess = useMemo(() => guessExercise(trimmed), [trimmed]);
+  const suggestedEquipment = useMemo(() => suggestEquipment(trimmed), [trimmed]);
+  const equipment = equipmentChoice ?? suggestedEquipment;
   const suggested = guess.primary[0];
   const primary = primaryChoice ?? suggested ?? 'chest';
   const secondary = (secondaryChoice ?? guess.primary.slice(1)).filter((m) => m !== primary);
   const mechanic = mechanicChoice ?? (suggested ? guess.mechanic : 'compound');
   const loading = loadingChoice ?? guessLoading(equipment);
-  const duplicate = existingNames.has(trimmed.toLowerCase());
+  const duplicate = existing.get(trimmed.toLowerCase());
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
@@ -328,7 +357,12 @@ function NewExerciseSheet({
             required
             autoFocus={!initialName}
           />
-          {duplicate && <small className="small lib-warn">You already have an exercise with this name.</small>}
+          {duplicate && (
+            <small className="small lib-warn">
+              “{duplicate.name}” is already in your library.{' '}
+              <Link to={`/library/${encodeURIComponent(duplicate.id)}`}>Open it</Link>
+            </small>
+          )}
         </label>
 
         <div className="field" role="group" aria-labelledby={`${ids}-primary`}>
@@ -363,7 +397,10 @@ function NewExerciseSheet({
         </div>
 
         <div className="field" role="group" aria-labelledby={`${ids}-equipment`}>
-          <span id={`${ids}-equipment`}>Equipment</span>
+          <span id={`${ids}-equipment`} className="lib-field-label">
+            Equipment
+            {!equipmentChoice && suggestedEquipment.length > 0 && <em className="lib-auto">Suggested from name</em>}
+          </span>
           <div className="chips wrap">
             {ALL_EQUIPMENT.map((eq) => (
               <button
@@ -371,7 +408,7 @@ function NewExerciseSheet({
                 type="button"
                 className="chip"
                 aria-pressed={equipment.includes(eq)}
-                onClick={() => setEquipment((cur) => toggle(cur, eq))}
+                onClick={() => setEquipment(toggle(equipment, eq))}
               >
                 {EQUIPMENT_LABEL[eq]}
               </button>
@@ -446,6 +483,8 @@ export function Library() {
   const deferredQuery = useDeferredValue(query);
   const [adding, setAdding] = useState<string | null>(null);
 
+  const ready = !!(profile && exercises && prefs);
+  const firstChipScroll = useRef(true);
   const pageRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
@@ -527,8 +566,9 @@ export function Library() {
     const row = chipsRef.current;
     const chip = row?.querySelector<HTMLElement>('[data-muscle][aria-pressed="true"]');
     if (!row || !chip) return;
-    row.scrollTo({ left: chip.offsetLeft - (row.clientWidth - chip.offsetWidth) / 2, behavior: 'smooth' });
-  }, [muscle, exercises]);
+    row.scrollTo({ left: chip.offsetLeft - (row.clientWidth - chip.offsetWidth) / 2, behavior: firstChipScroll.current ? 'instant' : 'smooth' });
+    firstChipScroll.current = false;
+  }, [muscle, ready]);
 
   // Hairline under the search bar once it sticks; its height positions jump targets below it.
   useEffect(() => {
@@ -539,7 +579,7 @@ export function Library() {
     let raf = 0;
     const check = () => {
       raf = 0;
-      const stuck = bar.getBoundingClientRect().top - header.getBoundingClientRect().bottom > 17;
+      const stuck = bar.getBoundingClientRect().top - header.getBoundingClientRect().bottom > 9;
       page.toggleAttribute('data-stuck', stuck);
     };
     const onScroll = () => {
@@ -554,13 +594,13 @@ export function Library() {
       cancelAnimationFrame(raf);
       ro.disconnect();
     };
-  }, [exercises, prefs]);
+  }, [ready]);
 
   const jump = useCallback((letter: string) => {
     document.getElementById(`lib-sec-${letter}`)?.scrollIntoView({ block: 'start' });
   }, []);
 
-  const existingNames = useMemo(() => new Set((exercises?.list ?? []).map((e) => e.name.trim().toLowerCase())), [exercises]);
+  const existing = useMemo(() => new Map((exercises?.list ?? []).map((e) => [e.name.trim().toLowerCase(), e])), [exercises]);
   const closeSheet = useCallback(() => setAdding(null), []);
   const onSaved = useCallback(
     (id: string) => {
@@ -586,7 +626,7 @@ export function Library() {
     empty = (
       <EmptyState
         icon="search"
-        title={typed ? `No matches for “${typed}”` : 'Nothing here yet'}
+        title={typed ? `No matches for “${typed}”` : 'No matching exercises'}
         action={
           <div className="lib-empty-actions">
             {typed && (
@@ -619,7 +659,7 @@ export function Library() {
           <h1>Exercises</h1>
           <div className="sub num">
             {total} movements
-            {gym && atGym !== null && ` · ${atGym} at ${gym.name}`}
+            {gym && atGym !== null && ` · ${atGym === total ? 'all' : atGym} at ${gym.name}`}
           </div>
         </div>
         <button type="button" className="icon-btn" onClick={() => setAdding('')} aria-label="New exercise" title="New exercise">
@@ -697,7 +737,7 @@ export function Library() {
 
       {letters.length > 4 && <IndexRail letters={letters} onJump={jump} />}
 
-      {adding !== null && <NewExerciseSheet initialName={adding} existingNames={existingNames} onClose={closeSheet} onSaved={onSaved} />}
+      {adding !== null && <NewExerciseSheet initialName={adding} existing={existing} onClose={closeSheet} onSaved={onSaved} />}
     </div>
   );
 }

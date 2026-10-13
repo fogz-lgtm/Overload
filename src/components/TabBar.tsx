@@ -36,16 +36,16 @@ function ActiveDock({ active }: { active: Workout }) {
 
 export function TabBar({ active }: { active?: Workout }) {
   return (
-    <div className="tabbar">
+    <nav className="tabbar" aria-label="Main">
       {active && <ActiveDock active={active} />}
-      <nav aria-label="Main">
+      <div className="tabbar-links">
         {TABS.map((t) => (
           <NavLink key={t.to} to={t.to} end={t.to === '/'} className={({ isActive }) => (isActive ? 'active' : '')}>
             <Icon name={t.icon} size={23} />
             {t.label}
           </NavLink>
         ))}
-      </nav>
-    </div>
+      </div>
+    </nav>
   );
 }

@@ -9,12 +9,12 @@
   position: sticky;
   top: env(safe-area-inset-top);
   z-index: 15;
-  margin: -6px calc(-1 * var(--gutter)) -4px;
-  padding: 6px var(--gutter) 10px;
+  margin: -8px calc(-1 * var(--gutter)) -4px;
+  padding: 10px var(--gutter);
   display: flex;
   flex-direction: column;
   gap: 10px;
-  background: color-mix(in oklab, var(--bg) 84%, transparent);
+  background: color-mix(in oklab, var(--bg) 88%, transparent);
   backdrop-filter: blur(22px) saturate(1.5);
   -webkit-backdrop-filter: blur(22px) saturate(1.5);
   border-bottom: 1px solid transparent;
@@ -35,7 +35,7 @@
   box-shadow: 0 10px 24px -18px rgba(0, 0, 0, 0.5);
 }
 
-.lib-search .input {
+.lib .lib-search .input {
   padding-right: 44px;
   background: var(--surface-1);
   border-color: var(--line);
@@ -90,7 +90,7 @@
 }
 
 /* ── Muscle overview ── */
-.lib-muscle {
+.card.lib-muscle {
   display: flex;
   align-items: center;
   gap: 16px;
@@ -99,12 +99,21 @@
 }
 .lib-muscle-figs {
   display: flex;
-  gap: 2px;
+  gap: 0;
   flex-shrink: 0;
 }
 .lib-muscle-figs svg {
-  width: 48px;
-  height: 116px;
+  height: 100px;
+  width: auto;
+  overflow: hidden;
+}
+@media (max-width: 374px) {
+  .lib-muscle-figs svg {
+    height: 84px;
+  }
+  .card.lib-muscle {
+    gap: 12px;
+  }
 }
 .lib-muscle-figs .muscle {
   stroke: var(--surface-1);
@@ -116,6 +125,9 @@
   flex-direction: column;
   gap: 3px;
   min-width: 0;
+}
+.lib-nowrap {
+  white-space: nowrap;
 }
 .lib-muscle-text h2 {
   font-size: 24px;
@@ -278,7 +290,7 @@
   font-size: 10px;
   font-weight: 700;
   line-height: 15px;
-  color: var(--accent);
+  color: var(--text-2);
   cursor: pointer;
 }
 
@@ -339,16 +351,29 @@
   border-radius: 50%;
   background: currentColor;
 }
-.lib-chip-soft[aria-pressed='true'] {
+.chip.lib-chip-soft[aria-pressed='true'] {
   background: var(--accent-soft);
   border-color: var(--accent-line);
   color: var(--accent);
 }
 .lib-warn {
-  color: var(--warning);
+  color: color-mix(in oklab, var(--warning) 62%, var(--text-1));
+}
+.lib-warn a {
+  font-weight: 650;
+  white-space: nowrap;
 }
 .lib-error {
   color: var(--danger);
+}
+/* Denser chips so long pickers stay scannable. */
+.lib-form .chips.wrap {
+  gap: 6px;
+}
+.lib-form .chips.wrap .chip {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 13px;
 }
 /* Save stays reachable while the form scrolls. */
 .lib-sheet-foot {

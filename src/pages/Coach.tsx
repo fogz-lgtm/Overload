@@ -9,6 +9,7 @@ import { formatWeight } from '../engine/load';
 import type { Exercise, Units, Workout } from '../engine/types';
 import { useExercises, useProfile } from '../hooks';
 import './Coach.css';
+import { ask } from '../ui/ask';
 
 const THREAD_ID = 'main';
 
@@ -91,12 +92,13 @@ export function Coach() {
     }
   }
 
-  const modelLabel = MODELS.find((m) => m.id === model)?.label ?? model;
+  // The avatar already says "AI"; the family name alone keeps the subtitle to one line.
+  const modelLabel = (MODELS.find((m) => m.id === model)?.label ?? model).replace(/^Claude /, '');
 
   return (
     <div className={`page coach${apiKey ? ' chatting' : ''}`}>
       <header className="coach-head">
-        {apiKey && <CoachAvatar size={44} />}
+        {apiKey && <CoachAvatar size={40} />}
         <div className="grow">
           <h1>Coach</h1>
           <div className="sub">{apiKey ? `${modelLabel} · sees your training data` : 'Optional · bring your own API key'}</div>
@@ -109,7 +111,7 @@ export function Coach() {
             title="New chat"
             disabled={!!pending}
             onClick={async () => {
-              if (confirm('Start a new conversation?')) await db.chats.delete(THREAD_ID);
+              if (await ask({ title: 'Start a new conversation?', body: 'This chat is cleared. Your training data is untouched.', confirm: 'New chat' })) await db.chats.delete(THREAD_ID);
             }}
           >
             <Icon name="edit" size={19} />
@@ -156,8 +158,8 @@ export function Coach() {
                   {pending.text ? (
                     <div className="bubble assistant coach-streaming">{pending.text}</div>
                   ) : (
-                    <div className="bubble assistant coach-typing" aria-label="Coach is thinking">
-                      <span className="typing">
+                    <div className="bubble assistant coach-typing">
+                      <span className="typing" role="img" aria-label="Coach is thinking">
                         <i />
                         <i />
                         <i />
@@ -270,7 +272,7 @@ function NoKey() {
 }
 
 const STATUS: Record<Workout['status'], { label: string; action: string; icon: IconName }> = {
-  planned: { label: 'Ready to start', action: 'View & start', icon: 'play' },
+  planned: { label: 'Ready', action: 'View & start', icon: 'play' },
   active: { label: 'In progress', action: 'Resume', icon: 'play' },
   done: { label: 'Completed', action: 'See results', icon: 'progress' },
 };
@@ -286,17 +288,17 @@ function WorkoutCard({ id, units, byId }: { id: string; units: Units; byId?: Exe
   return (
     <article className={`card coach-workout ${workout.status}`}>
       <header className="coach-workout-head">
-        <span className="eyebrow">
-          <span className="coach-dot" />
-          {status.label}
-        </span>
-        <h3>{title}</h3>
-        <span className="small muted">
-          {focus.length > 0 && `${focus.join(' · ')} · `}
-          <span className="num">
-            ~{workout.estimatedMinutes} min · {workout.exercises.length} exercises
+        <div className="row between wrap">
+          <span className="eyebrow">
+            <span className="coach-dot" />
+            {status.label}
           </span>
-        </span>
+          <span className="small faint num">
+            {workout.exercises.length} exercises · ~{workout.estimatedMinutes} min
+          </span>
+        </div>
+        <h3>{title}</h3>
+        {focus.length > 0 && <span className="small muted">{focus.join(' · ')}</span>}
       </header>
       <ul className="coach-ex">
         {shown.map((we) => {

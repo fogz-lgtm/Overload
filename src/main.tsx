@@ -1,11 +1,12 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+// Shared styles load first so screen stylesheets (imported by pages) win ties.
+import './fonts.css';
+import './styles.css';
 import { App } from './App';
 import { UpdateBanner } from './components/UpdateBanner';
 import './pwa';
 import { applyTheme, getTheme } from './theme';
-import './fonts.css';
-import './styles.css';
 
 applyTheme(getTheme());
 

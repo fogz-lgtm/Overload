@@ -18,6 +18,7 @@ import { uid } from '../engine/util';
 import { formatClock, useExercises, useNow, useProfile, useTrainingState } from '../hooks';
 import { haptics } from '../ui/haptics';
 import { PlateStack } from '../ui/PlateStack';
+import { ask } from '../ui/ask';
 import { toast } from '../ui/toast';
 import { splitName } from './Today';
 import { WorkoutSummary } from './WorkoutSummary';
@@ -182,13 +183,24 @@ export function WorkoutLogger() {
   async function finish() {
     const pending = w!.exercises.flatMap((e) => e.sets).filter((s) => !s.done).length;
     if (doneCount === 0) {
-      if (confirm('Nothing logged yet. Discard this workout?')) {
+      const discard = await ask({ title: 'Nothing logged yet', body: 'Discard this workout? It will not be saved.', confirm: 'Discard', tone: 'danger', icon: 'trash' });
+      if (discard) {
         await discardWorkout(w!.id);
         navigate('/');
       }
       return;
     }
-    if (pending > 0 && !confirm(`Finish with ${pending} set${pending === 1 ? '' : 's'} not done? Those won't be saved.`)) return;
+    if (
+      pending > 0 &&
+      !(await ask({
+        title: 'Finish workout?',
+        body: `${pending} set${pending === 1 ? ' is' : 's are'} not done yet. ${pending === 1 ? 'It' : 'They'} won't be saved.`,
+        confirm: 'Finish',
+        cancel: 'Keep going',
+        icon: 'check',
+      }))
+    )
+      return;
     const prs = await finishWorkout(w!.id);
     const workout = (await db.workouts.get(w!.id))!;
     setRest(null);
@@ -205,7 +217,8 @@ export function WorkoutLogger() {
             <Icon name="chevronDown" />
           </button>
           <div className="lg-head-title">
-            <span className="eyebrow truncate">{kind}</span>
+            <h1 className="sr-only">{w.name}</h1>
+            <span className="eyebrow truncate" aria-hidden="true">{kind}</span>
             <span className="display lg-clock">{formatClock(now - (w.startedAt ?? now))}</span>
           </div>
           <button type="button" className="btn primary sm" onClick={finish}>
@@ -264,7 +277,7 @@ export function WorkoutLogger() {
           type="button"
           className="btn ghost danger block"
           onClick={async () => {
-            if (!confirm('Discard this workout? Nothing from it will be saved.')) return;
+            if (!(await ask({ title: 'Discard workout?', body: 'Nothing from this session will be saved.', confirm: 'Discard', tone: 'danger', icon: 'trash' }))) return;
             await discardWorkout(w.id);
             navigate('/');
           }}
@@ -486,7 +499,7 @@ function ExerciseCard({
                     type="button"
                     className="lg-idx"
                     aria-label={s.done ? `Set ${label}` : `Remove set ${label}`}
-                    onClick={() => !s.done && confirm('Remove this set?') && onRemoveSet(s.id)}
+                    onClick={async () => !s.done && (await ask({ title: `Remove set ${label}?`, confirm: 'Remove', tone: 'danger' })) && onRemoveSet(s.id)}
                   >
                     {label}
                   </button>
@@ -533,7 +546,7 @@ function ExerciseCard({
             <button type="button" className="btn ghost sm" onClick={onAddSet}>
               <Icon name="plus" size={16} /> Add set
             </button>
-            {exercise?.loading === 'barbell' && next && (next.weightKg ?? next.targetWeightKg) > 0 && <PlateStack totalKg={next.weightKg ?? next.targetWeightKg} units={units} />}
+            {exercise?.equipment.includes('barbell') && next && (next.weightKg ?? next.targetWeightKg) > 0 && <PlateStack totalKg={next.weightKg ?? next.targetWeightKg} units={units} />}
           </div>
         </>
       )}

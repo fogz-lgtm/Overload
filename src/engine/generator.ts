@@ -1,6 +1,6 @@
 import { warmupSets } from './load';
 import { MUSCLES, PRIORITY_MUSCLES, weeklySetTarget } from './muscles';
-import { goalScheme, prescribe, type Prescription } from './progression';
+import { goalScheme, minLoadKg, prescribe, type Prescription } from './progression';
 import type {
   Equipment,
   Exercise,
@@ -253,7 +253,7 @@ export function buildSets(
 ): SetEntry[] {
   const sets: SetEntry[] = [];
   if (withWarmup && ex.mechanic === 'compound') {
-    for (const w of warmupSets(rx.weightKg, ex.loading, units, heavy)) {
+    for (const w of warmupSets(rx.weightKg, ex.loading, units, heavy, minLoadKg(ex, units))) {
       sets.push({ id: uid(), kind: 'warmup', targetWeightKg: w.weightKg, targetReps: w.reps, targetRir: 5, done: false });
     }
   }

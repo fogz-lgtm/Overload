@@ -7,9 +7,16 @@ Overload is inspired by AI-coached gym apps like Gravl, rebuilt in the open: no 
 **App:** https://fogz-lgtm.github.io/Overload/
 
 <p>
-  <img alt="Train screen" src="docs/today.png" width="240">
-  <img alt="Workout logger" src="docs/logger.png" width="240">
-  <img alt="Progress" src="docs/progress.png" width="240">
+  <img alt="Train: today's workout, readiness and week strip" src="docs/today.png" width="200">
+  <img alt="Workout logger with rest timer" src="docs/logger.png" width="200">
+  <img alt="Workout complete with new records" src="docs/summary.png" width="200">
+  <img alt="Progress: strength score and consistency" src="docs/progress.png" width="200">
+</p>
+<p>
+  <img alt="Onboarding" src="docs/onboarding.png" width="200">
+  <img alt="History calendar and timeline" src="docs/history.png" width="200">
+  <img alt="Exercise detail with estimated 1RM trend" src="docs/exercise.png" width="200">
+  <img alt="Exercise library" src="docs/library.png" width="200">
 </p>
 
 ## What it does
@@ -23,6 +30,8 @@ Overload is inspired by AI-coached gym apps like Gravl, rebuilt in the open: no 
 - **Your data is yours.** Stored locally in IndexedDB. One-tap JSON backup/restore, CSV export, and **import from Strong or Hevy** so you keep your history.
 - **Optional AI coach.** Bring your own Anthropic API key to chat with a coach that sees your logs. It can build a workout from "30 minutes, hotel gym, my shoulder's sore", diagnose a stalled lift from its history, and log a run you mention. Everything else works without it.
 - **Installable PWA.** Add it to your home screen; it works offline.
+- **Try before you commit.** "Explore with sample data" plays a virtual lifter through eight weeks of the real engine so every screen is full on first launch, and "Start fresh" wipes it.
+- **Built like a paid app.** A documented design system ([`docs/DESIGN.md`](docs/DESIGN.md)) covers dark and light themes, spring motion, haptics, and anatomy thumbnails on every exercise. Every screen passes axe-core accessibility checks in both themes.
 
 ## How the coach thinks
 
@@ -63,11 +72,13 @@ In **Settings → AI coach**, paste an [Anthropic API key](https://console.anthr
 
 ```
 src/
-  engine/      Pure training logic + tests (recovery, progression, generator, analytics, CSV importers, exercise library)
+  engine/      Pure training logic + tests (recovery, progression, generator, analytics, sample-data simulator, CSV importers, exercise library)
   db/          Dexie (IndexedDB) schema, queries, backup/restore and CSV import
   ai/          Optional Claude coach: training snapshot, tools, streaming tool loop
-  pages/       Screens (Train, Workout, History, Progress, Library, Coach, Settings, Onboarding)
-  components/  Body map, chart, sheet, inputs, icons
+  pages/       Screens (Train, Workout, Summary, History, Progress, Library, Coach, Settings, Onboarding) + per-screen CSS
+  components/  Body map / muscle thumbnails, chart, sheet, exercise pickers, inputs, icons
+  ui/          Design-system pieces: ring, count-up, sparkline, toast, confirm sheet, week strip, plate stack
+docs/DESIGN.md Design system: principles, tokens, components, writing
 ```
 
 ## Roadmap ideas

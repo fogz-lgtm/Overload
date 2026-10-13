@@ -8,7 +8,7 @@ import { Sheet } from '../components/Sheet';
 import { EQUIPMENT_LABEL, db } from '../db/db';
 import { setPref } from '../db/repo';
 import { exerciseTrend } from '../engine/analytics';
-import { estimate1RM, formatWeight, toDisplay } from '../engine/load';
+import { estimate1RM, formatWeight, formatWeightWhole, toDisplay } from '../engine/load';
 import { MUSCLES } from '../engine/muscles';
 import { bestE1RM, groupSessions, isTimed } from '../engine/progression';
 import type { ExercisePref, Loading, MuscleId, PerformedSet, Units } from '../engine/types';
@@ -64,26 +64,29 @@ function describeSets(sets: PerformedSet[], units: Units, timed: boolean): strin
     .join(' · ');
 }
 
-/** The first set that beats every other on `score`, ties broken by heavier load. */
-function bestBy(sets: PerformedSet[], score: (s: PerformedSet) => number): PerformedSet | undefined {
+/** Best set by `score`, then `tie`; on a full tie the earliest wins, since that's when the record was set. */
+function bestBy(sets: PerformedSet[], score: (s: PerformedSet) => number, tie: (s: PerformedSet) => number): PerformedSet | undefined {
   let best: PerformedSet | undefined;
-  for (const s of sets) {
-    if (!best || score(s) > score(best) || (score(s) === score(best) && s.weightKg > best.weightKg)) best = s;
+  for (const s of [...sets].sort((a, b) => a.at - b.at)) {
+    if (!best || score(s) > score(best) || (score(s) === score(best) && tie(s) > tie(best))) best = s;
   }
   return best;
 }
 
+const byWeight = (s: PerformedSet) => s.weightKg;
+const byReps = (s: PerformedSet) => s.reps;
+
 interface PersonalRecord {
   label: string;
   value: ReactNode;
-  detail: string;
+  detail?: string;
   set: PerformedSet;
 }
 
-function WeightValue({ kg, units, reps, timed }: { kg: number; units: Units; reps?: number; timed?: boolean }) {
+function WeightValue({ kg, units, reps, timed, whole }: { kg: number; units: Units; reps?: number; timed?: boolean; whole?: boolean }) {
   return (
     <>
-      {formatWeight(kg, units, false)}
+      {whole ? formatWeightWhole(kg, units, false) : formatWeight(kg, units, false)}
       <small>{units}</small>
       {reps !== undefined && (
         <>
@@ -158,35 +161,35 @@ export function ExerciseDetail() {
   const last = series[series.length - 1] ?? 0;
   const delta = series.length >= 2 && first > 0 ? (last / first - 1) * 100 : null;
 
-  const bestSet = bestBy(history, (s) => (repsMode ? s.reps : estimate1RM(s.weightKg, s.reps)));
+  const bestSet = bestBy(history, (s) => (repsMode ? s.reps : estimate1RM(s.weightKg, s.reps)), byWeight);
   const bestE1rmKg = Math.max(0, ...trend.map((p) => p.e1rmKg));
-  const repLabel = timed ? 'Longest hold' : 'Most reps';
 
   const records: PersonalRecord[] = [];
   if (!repsMode) {
-    const e1 = bestBy(history, (s) => estimate1RM(s.weightKg, s.reps + (s.rir ?? 0)));
+    const e1 = bestBy(history, (s) => estimate1RM(s.weightKg, s.reps + (s.rir ?? 0)), byWeight);
     if (e1) {
       records.push({
         label: 'Best estimated 1RM',
-        value: <WeightValue kg={estimate1RM(e1.weightKg, e1.reps + (e1.rir ?? 0))} units={units} />,
+        value: <WeightValue kg={estimate1RM(e1.weightKg, e1.reps + (e1.rir ?? 0))} units={units} whole />,
         detail: `${formatWeight(e1.weightKg, units)} × ${e1.reps}${e1.rir ? ` @ ${e1.rir} RIR` : ''}`,
         set: e1,
       });
     }
   }
-  const heaviest = bestBy(history, (s) => s.weightKg);
-  if (heaviest && heaviest.weightKg > 0) {
+  const heaviest = bestBy(history, byWeight, byReps);
+  const loaded = heaviest && heaviest.weightKg > 0 ? heaviest : undefined;
+  if (loaded) {
     records.push({
       label: repsMode ? 'Heaviest added load' : 'Heaviest weight',
-      value: <WeightValue kg={heaviest.weightKg} units={units} reps={heaviest.reps} timed={timed} />,
-      detail: '',
-      set: heaviest,
+      value: <WeightValue kg={loaded.weightKg} units={units} reps={loaded.reps} timed={timed} />,
+      set: loaded,
     });
   }
-  const mostReps = bestBy(history, (s) => s.reps);
-  if (mostReps) {
+  const mostReps = bestBy(history, byReps, byWeight);
+  // A single-load history makes the heaviest set and the rep record the same set; list it once.
+  if (mostReps && mostReps !== loaded) {
     records.push({
-      label: repLabel,
+      label: timed ? 'Longest hold' : 'Most reps',
       value:
         mostReps.weightKg > 0 ? (
           <WeightValue kg={mostReps.weightKg} units={units} reps={mostReps.reps} timed={timed} />
@@ -196,7 +199,6 @@ export function ExerciseDetail() {
             <small>{timed ? 's' : 'reps'}</small>
           </>
         ),
-      detail: '',
       set: mostReps,
     });
   }
@@ -233,7 +235,7 @@ export function ExerciseDetail() {
     toast(`Deleted ${ex.name}`, { icon: 'trash' });
   };
 
-  const tags = ex.equipment.length ? ex.equipment.map((e) => EQUIPMENT_LABEL[e]) : ['No equipment'];
+  const tags = ex.equipment.length ? ex.equipment.map((e) => EQUIPMENT_LABEL[e]) : ex.loading === 'bodyweight' ? [] : ['No equipment'];
   const loadingTag = LOADING_TAG[ex.loading];
   if (loadingTag) tags.push(loadingTag);
   if (ex.unilateral) tags.push('Unilateral');
@@ -306,7 +308,7 @@ export function ExerciseDetail() {
               ) : (
                 <div className="stat">
                   <span className="value">
-                    <CountUp value={toDisplay(bestE1rmKg, units)} format={fmtNum} />
+                    <CountUp value={toDisplay(bestE1rmKg, units)} format={(n) => String(Math.round(n))} />
                     <small>{units}</small>
                   </span>
                   <span className="label">Best e1RM</span>
@@ -403,7 +405,7 @@ export function ExerciseDetail() {
                         </span>
                       </span>
                       <span className="exd-session-best">
-                        <span className="display">{fmtNum(best)}</span>
+                        <span className="display">{repsMode ? best : Math.round(best)}</span>
                         <span>{repsMode ? (timed ? 'sec' : 'reps') : 'e1RM'}</span>
                       </span>
                     </Link>

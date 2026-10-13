@@ -1,4 +1,4 @@
-import { estimate1RM, formatWeight, loadIncrement, roundLoad, toDisplay, fromDisplay, weightForReps } from './load';
+import { BAR_KG, estimate1RM, formatWeight, lbToKg, loadIncrement, roundLoad, toDisplay, fromDisplay, weightForReps } from './load';
 import type { Exercise, Experience, Goal, PerformedSet, Profile, SetEntry, Units } from './types';
 
 const DAY = 86_400_000;
@@ -154,7 +154,24 @@ function describeSets(sets: PerformedSet[], units: Units, timed: boolean): strin
   return w > 0 ? `${repText} @ ${formatWeight(w, units)}` : repText;
 }
 
+/** The empty implement: a barbell can't be loaded lighter than the bar itself. */
+export function minLoadKg(ex: Exercise, units: Units): number {
+  if (ex.equipment.includes('trap_bar')) return units === 'kg' ? 25 : lbToKg(55);
+  if (ex.equipment.includes('ez_bar')) return units === 'kg' ? 10 : lbToKg(25);
+  if (ex.equipment.includes('barbell')) return BAR_KG[units];
+  return 0;
+}
+
 export function prescribe(input: ProgressionInput): Prescription {
+  const rx = prescribeRaw(input);
+  const floor = minLoadKg(input.exercise, input.profile.units);
+  if (rx.weightKg > 0 && rx.weightKg < floor) {
+    return { ...rx, weightKg: floor, rationale: `${rx.rationale} Starting with the empty bar.` };
+  }
+  return rx;
+}
+
+function prescribeRaw(input: ProgressionInput): Prescription {
   const { exercise: ex, profile, now } = input;
   const { units } = profile;
   const scheme = goalScheme(profile.goal, profile.experience);
@@ -346,6 +363,8 @@ export function autoregulate(
   let next = easy ? roundLoad(used + stepKg(ex, units, used), ex.loading, units) : roundLoad(used * 0.925, ex.loading, units);
   if (easy && next <= used) next = used + stepKg(ex, units, used);
   if (hard && next >= used) next = Math.max(0, used - stepKg(ex, units, used));
+  next = Math.max(next, minLoadKg(ex, units));
+  if (next === used) return { sets };
 
   let changed = 0;
   const out = sets.map((x, i) => {

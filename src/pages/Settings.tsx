@@ -6,7 +6,7 @@ import { Sheet } from '../components/Sheet';
 import { exportBackup, exportCsv, importWorkoutCsv, restoreBackup, type CsvImportSummary } from '../db/backup';
 import { ALL_EQUIPMENT, EQUIPMENT_LABEL, GYM_PRESETS, db } from '../db/db';
 import { eraseAll } from '../db/demo';
-import { formatWeight, fromDisplay } from '../engine/load';
+import { formatWeight, formatWeightWhole, fromDisplay } from '../engine/load';
 import type { Equipment, Experience, Goal, Gym, Profile, Sex, Units } from '../engine/types';
 import { dayKey, uid } from '../engine/util';
 import { download, formatDate, useProfile } from '../hooks';
@@ -273,17 +273,19 @@ export function Settings() {
         <h1 className="grow">Settings</h1>
       </header>
 
-      <button type="button" className="card interactive set-profile" onClick={() => setPanel('profile')} aria-label="Edit profile">
+      <button type="button" className="card interactive set-profile" onClick={() => setPanel('profile')}>
+        <span className="sr-only">Edit profile: </span>
         <span className="set-avatar" aria-hidden="true">
           {initial || <Icon name="user" size={26} />}
         </span>
         <span className="grow">
           <span className="set-profile-name">{profile.name.trim() || 'Add your name'}</span>
           <span className="set-profile-sub">
-            {titleOf(GOALS, profile.goal)} · {titleOf(EXPERIENCE, profile.experience)} · {profile.daysPerWeek} days/week
+            <span>{titleOf(GOALS, profile.goal)}</span> · <span>{titleOf(EXPERIENCE, profile.experience)}</span> ·{' '}
+            <span className="num">{profile.daysPerWeek} days/week</span>
           </span>
           <span className="set-profile-meta num">
-            {formatWeight(profile.bodyweightKg, profile.units)} · {STANDARDS.find((s) => s.value === profile.sex)?.label} standards
+            {formatWeightWhole(profile.bodyweightKg, profile.units)} · {STANDARDS.find((s) => s.value === profile.sex)?.label} standards
           </span>
         </span>
         <span className="set-trail">
@@ -297,14 +299,16 @@ export function Settings() {
             <span className="set-demo-icon" aria-hidden="true">
               <Icon name="sparkle" size={20} />
             </span>
-            <div className="grow stack xs">
-              <h3 id="set-demo-title">You're exploring sample data</h3>
-              <p className="small muted">Eight weeks of simulated training so you can look around. Start fresh when you're ready to log your own.</p>
+            <div className="grow stack">
+              <div className="stack xs">
+                <h2 id="set-demo-title">You're exploring sample data</h2>
+                <p className="small muted">Eight weeks of simulated training so you can look around. Start fresh when you're ready to log your own.</p>
+              </div>
+              <button type="button" className="btn primary sm set-demo-btn" onClick={() => setPanel('fresh')}>
+                Start fresh
+              </button>
             </div>
           </div>
-          <button type="button" className="btn primary block" onClick={() => setPanel('fresh')}>
-            Start fresh
-          </button>
         </section>
       )}
 
@@ -469,7 +473,7 @@ function ProfileSheet({ profile, onClose }: { profile: Profile; onClose: () => v
           )}
         </label>
         <div className="field">
-          <span id={`${ids}-std`}>Strength standards</span>
+          <span>Strength standards</span>
           <Segmented label="Strength standards" value={sex} options={STANDARDS} onChange={setSex} />
           <small className="small faint">Only used to compare your lifts with other lifters.</small>
         </div>
@@ -495,7 +499,6 @@ function DaysSheet({ days, onClose }: { days: number; onClose: () => void }) {
               type="button"
               className="set-day"
               aria-pressed={shown === d}
-              aria-label={`${d} days`}
               onClick={() => {
                 setShown(d);
                 void saveProfile({ daysPerWeek: d }, `Training ${d} days a week`);
@@ -1061,7 +1064,7 @@ function ImportSummary({ summary }: { summary: CsvImportSummary }) {
       {newExercises.length > 0 && (
         <div className="stack">
           <h3>New custom exercises</h3>
-          <p className="faint small">These didn't match the library, so they were added with a best guess at the muscles they work. Edit them any time in Exercises.</p>
+          <p className="faint small">These didn't match the library, so they were added with a best guess at the muscles they work. You'll find them in Exercises.</p>
           <div className="row wrap set-badges">
             {newExercises.map((n) => (
               <span key={n} className="badge">

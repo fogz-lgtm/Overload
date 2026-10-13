@@ -7,7 +7,7 @@ import { db } from '../db/db';
 import { flattenSets, loadGenerateInput, savePlan } from '../db/repo';
 import { detectPRs, type PR } from '../engine/analytics';
 import { estimateMinutes, planExercise, type Focus } from '../engine/generator';
-import { estimate1RM, formatWeight, toDisplay } from '../engine/load';
+import { estimate1RM, formatWeight, formatWeightWhole, toDisplay } from '../engine/load';
 import { MUSCLES } from '../engine/muscles';
 import { isTimed } from '../engine/progression';
 import type { Exercise, MuscleId, SetEntry, Units, WorkoutExercise } from '../engine/types';
@@ -190,27 +190,38 @@ export function WorkoutDetail() {
           <Stat label={sets === 1 ? 'Working set' : 'Working sets'}>
             <CountUp value={sets} />
           </Stat>
-          <Stat label={prs.length === 1 ? 'Record' : 'Records'} gold={prs.length > 0}>
+          <Stat label={prs.length === 1 ? 'PR' : 'PRs'} gold={prs.length > 0}>
             <CountUp value={prs.length} />
           </Stat>
         </div>
         <MuscleBreakdown exercises={performed} byId={ex.byId} />
         {summary && (
-          <p className="wd-why">
+          <div className="wd-why">
             <Icon name="sparkle" size={16} />
-            <span>{summary}</span>
-          </p>
+            <div>
+              <div className="eyebrow">Why this session</div>
+              <p>{summary}</p>
+            </div>
+          </div>
         )}
       </section>
 
       {prs.length > 0 && (
-        <section className="stack" aria-labelledby="wd-prs">
-          <h2 className="section-title" id="wd-prs">
-            Personal records
-          </h2>
-          {prs.map((p) => (
-            <PRCard key={p.exerciseId} pr={p} name={nameOf(p.exerciseId)} units={units} />
-          ))}
+        <section className="card wd-prs" aria-labelledby="wd-prs">
+          <div className="wd-prs-head">
+            <span className="wd-prs-icon">
+              <Icon name="trophy" size={20} />
+            </span>
+            <div>
+              <h2 id="wd-prs">{prs.length === 1 ? 'New personal record' : `${prs.length} personal records`}</h2>
+              <p>{prs.length === 1 ? 'Your best ever on this lift.' : 'Your best ever on these lifts.'}</p>
+            </div>
+          </div>
+          <ul>
+            {prs.map((p) => (
+              <PRRow key={p.exerciseId} pr={p} name={nameOf(p.exerciseId)} units={units} />
+            ))}
+          </ul>
         </section>
       )}
 
@@ -242,7 +253,7 @@ export function WorkoutDetail() {
           <Icon name="repeat" size={20} />
           Repeat this workout
         </button>
-        <p className="wd-hint">Same exercises, with loads updated from your latest sets.</p>
+        <p className="wd-hint">Same exercises, with up-to-date loads.</p>
         <button type="button" className="btn ghost danger block" onClick={() => setConfirming(true)}>
           <Icon name="trash" size={18} />
           Delete workout
@@ -334,30 +345,28 @@ function MuscleBreakdown({ exercises, byId }: { exercises: WorkoutExercise[]; by
 }
 
 function prValue(pr: PR, units: Units): string {
-  return pr.kind === 'reps' ? `${formatWeight(pr.weightKg ?? 0, units)} × ${pr.value}` : formatWeight(pr.value, units);
+  if (pr.kind === 'reps') return `${formatWeight(pr.weightKg ?? 0, units)} × ${pr.value}`;
+  return pr.kind === 'e1rm' ? formatWeightWhole(pr.value, units) : formatWeight(pr.value, units);
 }
 
-function PRCard({ pr, name, units }: { pr: ExercisePRs; name: string; units: Units }) {
+function PRRow({ pr, name, units }: { pr: ExercisePRs; name: string; units: Units }) {
   const { main } = pr;
   const gain = main.value - main.previous;
-  const was = main.kind === 'reps' ? `${main.previous}` : formatWeight(main.previous, units, false);
+  const was = main.kind === 'reps' ? `${main.previous}` : main.kind === 'e1rm' ? formatWeightWhole(main.previous, units, false) : formatWeight(main.previous, units, false);
   return (
-    <article className="card wd-pr">
-      <span className="wd-pr-icon">
-        <Icon name="trophy" size={20} />
-      </span>
+    <li className="wd-pr">
       <div className="grow">
-        <h3 className="wd-pr-name">{name}</h3>
-        <p className="wd-pr-text num">
+        <h3>{name}</h3>
+        <p className="num">
           New {PR_NAME[main.kind]} <strong>{prValue(main, units)}</strong> <span className="faint">(was {was})</span>
         </p>
         {pr.others.length > 0 && <p className="wd-pr-also">Also a new {pr.others.map((o) => PR_NAME[o.kind]).join(' and ')}</p>}
       </div>
-      <span className="wd-pr-gain display num" aria-label={`Up ${main.kind === 'reps' ? plural(gain, 'rep') : formatWeight(gain, units)}`}>
-        +{main.kind === 'reps' ? gain : formatWeight(gain, units, false)}
+      <span className="wd-pr-gain display num">
+        +{main.kind === 'reps' ? gain : main.kind === 'e1rm' ? Math.max(1, Math.round(toDisplay(gain, units))) : formatWeight(gain, units, false)}
         <small>{main.kind === 'reps' ? (gain === 1 ? 'rep' : 'reps') : units}</small>
       </span>
-    </article>
+    </li>
   );
 }
 
@@ -404,17 +413,11 @@ function ExerciseCard({ we, exercise, units }: { we: WorkoutExercise; exercise: 
   const volumeKg = working.reduce((a, s) => a + (s.weightKg ?? 0) * (s.reps ?? 0), 0);
   const hasRir = sets.some((s) => s.rir !== undefined);
   const timed = exercise ? isTimed(exercise) : false;
-  let best: SetEntry | undefined;
-  let bestE1 = 0;
-  if (!timed) {
-    for (const s of working) {
-      const e = estimate1RM(s.weightKg ?? 0, s.reps ?? 0);
-      if (e > bestE1) {
-        bestE1 = e;
-        best = s;
-      }
-    }
-  }
+  const rated = !!exercise && !timed && exercise.pattern !== 'core';
+  const e1 = rated ? working.map((s) => estimate1RM(s.weightKg ?? 0, s.reps ?? 0)) : [];
+  const bestE1 = Math.max(0, ...e1);
+  // Only single out a set that actually beat the others; ties show the e1RM in the header instead.
+  const best = bestE1 > 0 && e1.filter((e) => e === bestE1).length === 1 ? working[e1.indexOf(bestE1)] : undefined;
   const name = exercise?.name ?? we.exerciseId;
   let n = 0;
 
@@ -434,6 +437,7 @@ function ExerciseCard({ we, exercise, units }: { we: WorkoutExercise; exercise: 
           <p className="wd-ex-meta num">
             {plural(working.length, 'set')}
             {volumeKg > 0 && ` · ${Math.round(toDisplay(volumeKg, units)).toLocaleString()} ${units}`}
+            {bestE1 > 0 && !best && ` · e1RM ${formatWeightWhole(bestE1, units)}`}
           </p>
         </div>
       </div>
@@ -463,7 +467,7 @@ function ExerciseCard({ we, exercise, units }: { we: WorkoutExercise; exercise: 
                   </span>
                   {isBest && (
                     <span className="wd-best num" title="Best set by estimated one-rep max">
-                      e1RM {formatWeight(bestE1, units)}
+                      e1RM {formatWeightWhole(bestE1, units)}
                     </span>
                   )}
                 </td>

@@ -1,6 +1,6 @@
 /* ── Settings ───────────────────────────────────────────────────────────── */
 
-.set-header {
+.page-header.set-header {
   align-items: center;
 }
 .set-section {
@@ -62,6 +62,9 @@
   color: var(--text-2);
   line-height: 1.35;
 }
+.set-profile-sub > span {
+  white-space: nowrap;
+}
 .set-profile-meta {
   display: block;
   margin-top: 2px;
@@ -70,10 +73,10 @@
 }
 
 /* ── Demo card ── */
-.set-demo {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+.set-demo-btn {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 0 18px;
 }
 .set-demo-head {
   display: flex;
@@ -94,6 +97,24 @@
 }
 
 /* ── Rows ── */
+/* Inset hairlines that start after the icon tile. */
+.set .group > * + * {
+  position: relative;
+  border-top: 0;
+}
+.set .group > * + *::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 58px;
+  right: 0;
+  height: 1px;
+  background: var(--line);
+  pointer-events: none;
+}
+.set .group > .set-about + *::before {
+  left: 16px;
+}
 .set-row {
   transition: background var(--d1) var(--ease);
 }
@@ -111,7 +132,7 @@
 .set-static {
   cursor: default;
 }
-.set-static:active {
+.group-row.set-static:active {
   background: none;
 }
 .set-row-text {
@@ -144,6 +165,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.set-static .set-value {
+  max-width: 62%;
 }
 .set-row.danger .set-row-label {
   color: var(--danger);
@@ -202,10 +226,6 @@
   box-shadow: 0 3px 10px -3px var(--accent-glow);
   animation: set-pop var(--d3) var(--spring) both;
 }
-.set-gym.active .row-icon {
-  color: var(--accent);
-  background: var(--accent-soft);
-}
 .set-gym-edit {
   flex-shrink: 0;
   min-width: 58px;
@@ -240,17 +260,17 @@
 }
 
 /* ── Option cards with a radio mark ── */
-.set-option {
+.option-card.set-option {
   padding: 14px 14px 14px 16px;
 }
-.set-option strong {
+.option-card.set-option strong {
   font-size: 15.5px;
   margin-bottom: 1px;
 }
-.set-option.compact {
+.option-card.set-option.compact {
   padding: 12px 14px 12px 16px;
 }
-.set-radio {
+.option-card .set-radio {
   width: 22px;
   height: 22px;
   border-radius: 50%;
@@ -265,7 +285,7 @@
 .option-card .set-radio svg {
   display: block;
 }
-.set-option[aria-pressed='true'] .set-radio {
+.option-card.set-option[aria-pressed='true'] .set-radio {
   border-color: transparent;
   background: linear-gradient(180deg, var(--accent-fill), var(--accent-fill-2));
   color: var(--accent-ink);
@@ -368,7 +388,7 @@
   color: var(--danger);
 }
 .set-warn {
-  color: var(--warning);
+  color: color-mix(in oklab, var(--warning) 62%, var(--text-1));
 }
 .set-presets {
   display: grid;
@@ -381,10 +401,10 @@
   gap: 2px;
   padding: 12px 14px;
 }
-.set-preset strong {
+.option-card.set-preset strong {
   font-size: 14.5px;
 }
-.set-preset span {
+.option-card.set-preset span {
   font-size: 12.5px;
 }
 
@@ -444,12 +464,15 @@
 }
 
 /* ── Appearance ── */
-.set-seg-compact {
-  flex: none;
-  width: 196px;
+.set-theme .set-row-label {
+  flex: 1 0 auto;
+}
+.segmented.set-seg-compact {
+  flex: 0 1 196px;
+  min-width: 0;
   padding: 2px;
 }
-.set-seg-compact button {
+.segmented.set-seg-compact button {
   min-height: 32px;
   font-size: 13px;
   padding: 0 6px;
@@ -487,10 +510,10 @@
   background: var(--surface-1);
   border: 1px solid var(--line);
 }
-.set-stats .value {
+.set-stats .stat .value {
   font-size: 36px;
 }
-.set-badges {
+.row.set-badges {
   gap: 6px;
 }
 .set-warnings {
@@ -534,7 +557,7 @@
 }
 .set-build {
   display: inline-block;
-  max-width: 170px;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -564,14 +587,14 @@
   flex-shrink: 0;
   background: var(--danger);
 }
-.set-confirm {
+.btn.set-confirm {
   transition:
     background var(--d2) var(--ease),
     color var(--d2),
     border-color var(--d2),
     transform var(--d1) var(--ease);
 }
-.set-confirm.armed {
+.btn.set-confirm.armed {
   background: var(--danger);
   border-color: transparent;
   color: var(--bg);

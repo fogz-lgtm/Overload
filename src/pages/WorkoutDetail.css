@@ -153,32 +153,44 @@
   margin-top: 1px;
   color: var(--text-3);
 }
+.wd-why .eyebrow {
+  margin-bottom: 3px;
+}
 
 /* ── Records ────────────────────────────────────────────────────────────── */
-.card.wd-pr {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 14px 16px;
-  border-radius: var(--r-md);
-  border-color: color-mix(in oklab, var(--pr) 32%, transparent);
+.card.wd-prs {
+  padding: 0;
+  overflow: hidden;
+  border-color: color-mix(in oklab, var(--pr) 30%, transparent);
   background:
-    radial-gradient(90% 120% at 0% 0%, color-mix(in oklab, var(--pr) 13%, transparent), transparent 70%),
+    radial-gradient(120% 90% at 0% 0%, color-mix(in oklab, var(--pr) 12%, transparent), transparent 60%),
     var(--surface-1);
   animation: wd-pop var(--d3) var(--spring) backwards;
-}
-.card.wd-pr + .card.wd-pr {
-  animation-delay: 60ms;
 }
 @keyframes wd-pop {
   from {
     opacity: 0;
-    transform: scale(0.96);
+    transform: scale(0.97);
   }
 }
-.wd-pr-icon {
-  width: 40px;
-  height: 40px;
+.wd-prs-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 16px 14px;
+}
+.wd-prs-head h2 {
+  font-size: 17px;
+  letter-spacing: -0.02em;
+}
+.wd-prs-head p {
+  font-size: 12.5px;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+.wd-prs-icon {
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   flex-shrink: 0;
   display: inline-flex;
@@ -186,25 +198,37 @@
   justify-content: center;
   color: var(--pr);
   background: color-mix(in oklab, var(--pr) 16%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--pr) 30%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--pr) 32%, transparent);
 }
-.wd-pr-name {
+.wd-prs ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.wd-pr {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+}
+.wd-pr h3 {
   font-size: 15px;
   overflow-wrap: anywhere;
 }
-.wd-pr-text {
+.wd-pr p {
   font-size: 13px;
   color: var(--text-2);
   margin-top: 2px;
 }
-.wd-pr-text strong {
+.wd-pr strong {
   color: var(--text-1);
   font-weight: 650;
 }
-.wd-pr-also {
+.wd-pr .wd-pr-also {
   font-size: 12px;
   color: var(--text-3);
-  margin-top: 2px;
+  margin-top: 1px;
 }
 .wd-pr-gain {
   font-size: 26px;
@@ -330,7 +354,8 @@ td.wd-rir {
   color: var(--text-3);
 }
 .wd-sets tr.warm .wd-set-n {
-  color: var(--warning);
+  color: var(--text-3);
+  font-weight: 600;
 }
 .wd-sets tr.warm td.wd-rir {
   color: var(--text-3);

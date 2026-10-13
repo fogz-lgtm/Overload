@@ -22,6 +22,7 @@ import { haptics } from '../ui/haptics';
 import { PlateStack } from '../ui/PlateStack';
 import { Range } from '../ui/Range';
 import { Ring } from '../ui/Ring';
+import { ask } from '../ui/ask';
 import { toast } from '../ui/toast';
 import { WeekStrip, type DayMark } from '../ui/WeekStrip';
 import './Today.css';
@@ -129,7 +130,10 @@ export function Today() {
           <button
             type="button"
             className="btn sm"
-            onClick={() => confirm('Erase the sample data and set up your own profile?') && void eraseAll()}
+            onClick={async () =>
+              (await ask({ title: 'Start fresh?', body: 'The sample data is erased and you set up your own profile.', confirm: 'Erase sample data', tone: 'danger' })) &&
+              void eraseAll()
+            }
           >
             Start fresh
           </button>
@@ -433,7 +437,7 @@ function ExercisePreview({
               </div>
             ))}
           </div>
-          {exercise.loading === 'barbell' && top && top.targetWeightKg > 0 && <PlateStack totalKg={top.targetWeightKg} units={profile.units} />}
+          {exercise.equipment.includes('barbell') && top && top.targetWeightKg > 0 && <PlateStack totalKg={top.targetWeightKg} units={profile.units} />}
           {exercise.cues.length > 0 && (
             <ol className="today-cues">
               {exercise.cues.map((c) => (

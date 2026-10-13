@@ -15,6 +15,12 @@ export function formatWeight(kg: number, units: Units, withUnit = true): string 
   return withUnit ? `${text} ${units}` : text;
 }
 
+/** Whole display units, for estimates and bodyweight where a decimal is false precision. */
+export function formatWeightWhole(kg: number, units: Units, withUnit = true): string {
+  const v = Math.round(toDisplay(kg, units));
+  return withUnit ? `${v} ${units}` : String(v);
+}
+
 /** Epley estimated one-rep max. `reps` should already include reps in reserve. */
 export function estimate1RM(weightKg: number, reps: number): number {
   if (weightKg <= 0 || reps <= 0) return 0;
@@ -83,6 +89,7 @@ export function warmupSets(
   loading: Loading,
   units: Units,
   heavy: boolean,
+  emptyKg = loading === 'barbell' ? BAR_KG[units] : 0,
 ): { weightKg: number; reps: number }[] {
   if (loading === 'bodyweight' || loading === 'band' || workingKg <= 0) return [];
   const scheme = heavy
@@ -97,8 +104,8 @@ export function warmupSets(
         [0.7, 4],
       ];
   const out: { weightKg: number; reps: number }[] = [];
-  const floor = loading === 'barbell' ? BAR_KG[units] : 0;
-  if (loading === 'barbell' && workingKg > BAR_KG[units] * 1.6) out.push({ weightKg: BAR_KG[units], reps: 10 });
+  const floor = emptyKg;
+  if (emptyKg > 0 && workingKg > emptyKg * 1.6) out.push({ weightKg: emptyKg, reps: 10 });
   for (const [pct, reps] of scheme) {
     const w = roundLoad(Math.max(floor, workingKg * pct!), loading, units);
     const last = out[out.length - 1];

@@ -3,6 +3,7 @@ import { lazy, Suspense } from 'react';
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { TabBar } from './components/TabBar';
 import { db } from './db/db';
+import { AskHost } from './ui/ask';
 import { ToastHost } from './ui/toast';
 import { useProfile } from './hooks';
 import { ExerciseDetail } from './pages/ExerciseDetail';
@@ -38,7 +39,7 @@ function Shell() {
   const active = useLiveQuery(() => db.workouts.where('status').equals('active').first());
   return (
     <>
-      <div className={`app${focus ? ' focus' : active ? ' docked' : ''}`}>
+      <main className={`app${focus ? ' focus' : active ? ' docked' : ''}`}>
         <Routes>
           <Route path="/" element={<Today />} />
           <Route path="/workout/:id" element={<WorkoutLogger />} />
@@ -58,9 +59,10 @@ function Shell() {
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-      </div>
+      </main>
       {!focus && <TabBar active={active} />}
       <ToastHost />
+      <AskHost />
     </>
   );
 }

@@ -5,7 +5,7 @@
 .coach-head {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   min-height: 44px;
 }
 .coach-head .icon-btn:disabled {
@@ -13,7 +13,8 @@
 }
 .coach-head .sub {
   color: var(--text-3);
-  font-size: 13px;
+  font-size: 12.5px;
+  text-wrap: balance;
   font-weight: 500;
   margin-top: 2px;
 }
@@ -271,6 +272,9 @@
   flex-direction: column;
   gap: 4px;
 }
+.coach-workout-head .row {
+  margin-bottom: 4px;
+}
 .coach-workout-head .eyebrow {
   display: inline-flex;
   align-items: center;
@@ -332,9 +336,6 @@
 /* ── Composer ── */
 .coach-composer {
   padding-top: 18px;
-}
-.app.docked .coach-composer {
-  bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 64px);
 }
 .coach-field {
   flex: 1;

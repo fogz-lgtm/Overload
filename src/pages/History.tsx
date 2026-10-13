@@ -116,13 +116,20 @@ export function ConfirmSheet({
 }) {
   return (
     <Sheet open={open} onClose={onClose} title={title} subtitle={subtitle}>
-      <div className="stack lg">
-        <p className="muted">{children}</p>
-        <button type="button" className="btn block danger" onClick={onConfirm}>
-          <Icon name="trash" size={18} />
-          {confirmLabel}
-        </button>
-      </div>
+      {(close) => (
+        <div className="stack lg">
+          <p className="muted">{children}</p>
+          <div className="row" style={{ gap: 10 }}>
+            <button type="button" className="btn grow" onClick={close}>
+              Cancel
+            </button>
+            <button type="button" className="btn grow danger-fill" onClick={onConfirm}>
+              <Icon name="trash" size={18} />
+              {confirmLabel}
+            </button>
+          </div>
+        </div>
+      )}
     </Sheet>
   );
 }
@@ -196,6 +203,11 @@ function prCounts(workouts: Workout[]): Map<string, number> {
   return out;
 }
 
+function sinceText(t: number, now: number): string {
+  const sameYear = new Date(t).getFullYear() === new Date(now).getFullYear();
+  return formatDate(t, { month: 'short', day: 'numeric', year: sameYear ? undefined : 'numeric' });
+}
+
 const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export function History() {
@@ -261,7 +273,7 @@ export function History() {
         <h1>History</h1>
         <div className="sub">
           {workouts.length
-            ? `${plural(workouts.length, 'workout')} since ${formatDate(workoutAt(workouts[workouts.length - 1]!), { month: 'short', day: 'numeric', year: 'numeric' })}`
+            ? `${plural(workouts.length, 'workout')} since ${sinceText(workoutAt(workouts[workouts.length - 1]!), now)}`
             : entries.length
               ? `${plural(entries.length, 'cardio session')} logged`
               : 'Every session you finish lands here'}
@@ -383,14 +395,12 @@ function totalsBetween(workouts: Workout[], from: number, to: number, units: Uni
   return t;
 }
 
-function deltaText(cur: number, prev: number, vs: string, percent: boolean): string {
-  if (prev <= 0) return cur > 0 ? `None in ${vs}` : '';
-  if (percent) {
-    const p = Math.round(((cur - prev) / prev) * 100);
-    return p === 0 ? `Level with ${vs}` : `${p > 0 ? '+' : '−'}${Math.abs(p)}% vs ${vs}`;
-  }
-  const d = Math.round(cur - prev);
-  return d === 0 ? `Same as ${vs}` : `${d > 0 ? '+' : '−'}${Math.abs(d)} vs ${vs}`;
+/** Change vs the comparison month, as [headline, context]; the context drops out when space is tight. */
+function deltaText(cur: number, prev: number, vs: string, percent: boolean): [string, string] {
+  if (prev <= 0) return cur > 0 ? [`None in ${vs}`, ''] : ['', ''];
+  const d = percent ? Math.round(((cur - prev) / prev) * 100) : Math.round(cur - prev);
+  if (d === 0) return ['Same', `as ${vs}`];
+  return [`${d > 0 ? '+' : '−'}${Math.abs(d)}${percent ? '%' : ''}`, `vs ${vs}`];
 }
 
 function MonthCard({
@@ -412,7 +422,7 @@ function MonthCard({
   now: number;
   onDay: (list: Entry[]) => void;
 }) {
-  const [dir, setDir] = useState<'next' | 'prev'>('prev');
+  const [dir, setDir] = useState<'next' | 'prev' | null>(null);
   const maxMonth = monthIndex(now);
   const current = month === maxMonth;
   const prev = month - 1;
@@ -473,32 +483,37 @@ function MonthCard({
         <span className="hist-key lifted">Lifted</span>
         <span className="hist-key cardio">Cardio</span>
         {before.count + cur.count > 0 && (
-          <span className="hist-legend-vs num">
-            vs {vs} {current ? `1–${span}` : ''}
-          </span>
+          <span className="hist-legend-vs num">{`vs ${vs}${current ? ` 1–${span}` : ''}`}</span>
         )}
       </div>
     </section>
   );
 }
 
-function MonthStat({ label, delta, children }: { label: string; delta: string; children: ReactNode }) {
+function MonthStat({ label, delta: [headline, context], children }: { label: string; delta: [string, string]; children: ReactNode }) {
   return (
     <div className="stat">
       <span className="value">{children}</span>
       <span className="label">{label}</span>
-      <span className="hist-delta num">{delta || ' '}</span>
+      <span className="hist-delta num">
+        <span>{headline || '\u00a0'}</span>
+        {context && <span>{context}</span>}
+      </span>
     </div>
   );
 }
 
 function describeDay(list: Entry[]): string {
   return list
-    .map((e) => (e.kind === 'workout' ? `${e.workout.name.split(' · ')[0]} workout` : `${e.activity.minutes} minute ${ACTIVITY[e.activity.kind].label.toLowerCase()}`))
+    .map((e) => {
+      if (e.kind === 'activity') return `${e.activity.minutes} minute ${ACTIVITY[e.activity.kind].label.toLowerCase()}`;
+      const [type, muscles] = e.workout.name.split(' · ');
+      return muscles ? `${type} workout` : e.workout.name;
+    })
     .join(', ');
 }
 
-function MonthGrid({ month, byDay, now, onDay, dir }: { month: number; byDay: Map<string, Entry[]>; now: number; onDay: (list: Entry[]) => void; dir: 'next' | 'prev' }) {
+function MonthGrid({ month, byDay, now, onDay, dir }: { month: number; byDay: Map<string, Entry[]>; now: number; onDay: (list: Entry[]) => void; dir: 'next' | 'prev' | null }) {
   const offset = (monthDate(month).getDay() + 6) % 7;
   const today = dayKey(now);
   const endOfToday = new Date(now).setHours(23, 59, 59, 999);
@@ -509,7 +524,7 @@ function MonthGrid({ month, byDay, now, onDay, dir }: { month: number; byDay: Ma
           <span key={i}>{d}</span>
         ))}
       </div>
-      <div className={`hist-cal-grid ${dir}`}>
+      <div className={`hist-cal-grid${dir ? ` ${dir}` : ''}`}>
         {Array.from({ length: offset }, (_, i) => (
           <span key={`pad${i}`} />
         ))}
@@ -592,9 +607,6 @@ function WorkoutCard({
             </span>
           )}
         </span>
-      </span>
-      <span className="hist-chevron">
-        <Icon name="chevron" size={18} />
       </span>
     </Link>
   );

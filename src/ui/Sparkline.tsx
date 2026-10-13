@@ -1,6 +1,7 @@
 /** Tiny trend line with an end dot; meant to sit beside a number, not stand alone. */
 export function Sparkline({ values, width = 72, height = 26, label }: { values: number[]; width?: number; height?: number; label: string }) {
-  if (values.length < 2) return null;
+  // Keep the footprint so rows line up even before there's a trend to draw.
+  if (values.length < 2) return <svg width={width} height={height} aria-hidden="true" style={{ flexShrink: 0 }} />;
   const min = Math.min(...values);
   const max = Math.max(...values);
   const span = max - min || 1;

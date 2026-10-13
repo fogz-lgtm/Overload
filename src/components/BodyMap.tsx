@@ -66,17 +66,34 @@ function ShapeEl({
   title,
   selected,
   onSelect,
+  focusable,
 }: {
   s: Shape;
   fill: string;
   title?: string;
   selected?: boolean;
   onSelect?: (m: MuscleId) => void;
+  focusable: boolean;
 }) {
   const props = {
     className: `muscle${selected ? ' sel' : ''}`,
     style: { fill },
     onClick: onSelect ? () => onSelect(s.m) : undefined,
+    // Selectable maps are operable by keyboard and announced as buttons.
+    ...(onSelect && focusable
+      ? {
+          role: 'button',
+          tabIndex: 0,
+          'aria-label': title,
+          'aria-pressed': !!selected,
+          onKeyDown: (e: React.KeyboardEvent) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onSelect(s.m);
+            }
+          },
+        }
+      : {}),
   };
   const t = title ? <title>{title}</title> : null;
   if ('d' in s) return <path d={s.d} {...props}>{t}</path>;
@@ -97,11 +114,22 @@ interface FigureProps {
 
 export function Figure({ view, fill, title, selected, onSelect, viewBox = '0 0 120 252', label, className }: FigureProps) {
   const shapes = view === 'front' ? FRONT : BACK;
+  // One tab stop per muscle: mirrored copies and extra segments stay pointer-only.
+  const firstIndex = new Map<MuscleId, number>();
+  shapes.forEach((s, i) => firstIndex.has(s.m) || firstIndex.set(s.m, i));
   const draw = (s: Shape, i: number, side: string) => (
-    <ShapeEl key={`${side}${i}`} s={s} fill={fill(s.m)} title={title?.(s.m)} selected={selected === s.m} onSelect={onSelect} />
+    <ShapeEl
+      key={`${side}${i}`}
+      s={s}
+      fill={fill(s.m)}
+      title={title?.(s.m)}
+      selected={selected === s.m}
+      onSelect={onSelect}
+      focusable={side === 'l' && firstIndex.get(s.m) === i}
+    />
   );
   return (
-    <svg viewBox={viewBox} role="img" aria-label={label} className={className}>
+    <svg viewBox={viewBox} role={onSelect ? 'group' : 'img'} aria-label={label} className={className}>
       <Silhouette />
       {shapes.map((s, i) => draw(s, i, 'l'))}
       <g transform="matrix(-1 0 0 1 120 0)">{shapes.map((s, i) => draw(s, i, 'r'))}</g>

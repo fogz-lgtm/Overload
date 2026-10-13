@@ -7,7 +7,7 @@ export function EmptyState({ icon, title, children, action }: { icon: IconName; 
       <span className="empty-icon">
         <Icon name={icon} size={28} />
       </span>
-      <h3>{title}</h3>
+      <h2>{title}</h2>
       {children && <p>{children}</p>}
       {action}
     </div>
