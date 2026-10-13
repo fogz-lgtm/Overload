@@ -2,7 +2,9 @@
 
 **A free, open-source strength coach that plans every workout around how recovered you are, tells you exactly what to lift, and shows its math.**
 
-Overload is inspired by AI-coached gym apps like Gravl, rebuilt in the open: no account, no subscription, works offline, and your training log never leaves your phone unless you export it.
+Overload is inspired by AI-coached gym apps like Gravl, rebuilt in the open: no account, no subscription, works offline, and your training log never leaves your phone unless you export it. It's a static web app hosted free on GitHub Pages, with no backend.
+
+**App:** https://fogz-lgtm.github.io/Overload/
 
 <p>
   <img alt="Train screen" src="docs/today.png" width="240">
@@ -34,7 +36,15 @@ All of it lives in [`src/engine`](src/engine). It's pure TypeScript with no UI o
 | **Progression** ([`progression.ts`](src/engine/progression.ts)) | Double progression with RIR autoregulation. Every set hits the top of the rep range at the target RIR → add the smallest practical increment (bigger for heavy squats and hinges). Inside the range → same weight, +1 rep. Far below → re-target from your estimated 1RM. No e1RM gain in 3 sessions → planned 10% deload. Back after 3+ weeks → ease in at 80–90%. The first session is seeded conservatively from bodyweight, or from a related lift you've already logged. |
 | **Strength score** ([`analytics.ts`](src/engine/analytics.ts)) | Best e1RM (Epley, counting reps in reserve) for squat, bench, deadlift, overhead press and row, with dumbbell and variation equivalents, divided by bodyweight and mapped to a 0–100 scale through beginner→elite standards. |
 
-## Run it
+## How this repo hosts the app
+
+Every push to `main` runs `.github/workflows/deploy-pages.yml`. The workflow runs the tests, typechecks, builds the app into `dist/` for the repo's Pages path, and publishes it to GitHub Pages. A service worker makes the installed app open instantly from a local copy and work offline. When a new deploy lands it shows an "Update ready — tap to refresh" banner instead of reloading on its own, so it never interrupts a set.
+
+One-time setup (repo owner, in Settings): make the repo **public** (free accounts can only use Pages on public repos), then go to **Settings → Pages → Source: "GitHub Actions"**. If the first workflow run failed before this was done, re-run it from the Actions tab.
+
+On your phone, open the app in Safari and choose **Share → Add to Home Screen**.
+
+## Develop
 
 ```bash
 npm install
@@ -43,13 +53,9 @@ npm test           # engine, importer and coach-loop tests
 npm run build      # static site in dist/
 ```
 
-Requires Node 20+. The build is a fully static site, so host `dist/` anywhere.
+Requires Node 20+.
 
-### Deploy to GitHub Pages
-
-The included workflow publishes to `https://<you>.github.io/<repo>/` on every push to `main`. Turn it on once under **Settings → Pages → Source: GitHub Actions**. On your phone, open the URL and choose **Add to Home Screen**.
-
-### AI coach (optional)
+## Turn on the AI coach (optional)
 
 In **Settings → AI coach**, paste an [Anthropic API key](https://console.anthropic.com/settings/keys) and pick a model (Claude Opus 5.5 by default; Sonnet 5.5 and Haiku 5.5 are cheaper). The key is stored only in your browser and is sent only to `api.anthropic.com`. Requests go directly from your device to the API; there's no Overload server. Each message includes a compact snapshot of your training data so the coach can ground its answers. Opus and Sonnet requests opt into the API's server-side fallback, so a rare declined request is retried on a fallback model instead of failing.
 

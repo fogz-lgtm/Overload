@@ -5,12 +5,16 @@ import { VitePWA } from 'vite-plugin-pwa';
 // BASE_PATH lets the GitHub Pages workflow serve from /<repo>/.
 const base = process.env.BASE_PATH ?? '/';
 
+// Stamped into the app (Settings → About) so you can tell which deploy is installed.
+const buildId = process.env.GITHUB_SHA?.slice(0, 7) ?? `dev-${new Date().toISOString().slice(0, 16)}`;
+
 export default defineConfig({
   base,
+  define: { __BUILD_ID__: JSON.stringify(buildId) },
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'Overload — Strength Coach',

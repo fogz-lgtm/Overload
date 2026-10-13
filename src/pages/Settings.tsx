@@ -195,6 +195,9 @@ function AboutSection() {
           Overload is open source (MIT) and local-first. Your training data never leaves this device unless you export it or use the AI
           coach.
         </p>
+        <p className="faint small num" style={{ marginTop: 8 }}>
+          Build {__BUILD_ID__}
+        </p>
       </section>
     </>
   );
