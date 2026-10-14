@@ -157,9 +157,9 @@ body {
   -webkit-tap-highlight-color: transparent;
   text-rendering: optimizeLegibility;
   font-feature-settings: 'cv11' 1, 'ss03' 1;
-}
-body {
-  overscroll-behavior-y: none;
+  /* Hold the page still like a native app: no rubber-band bounce, no double-tap zoom. */
+  overscroll-behavior: none;
+  touch-action: manipulation;
 }
 button,
 input,
@@ -168,6 +168,12 @@ textarea {
   font: inherit;
   color: inherit;
   letter-spacing: inherit;
+}
+/* iOS zooms the page into any text field under 16px and leaves it zoomed. */
+input,
+select,
+textarea {
+  font-size: max(16px, 1em);
 }
 button {
   -webkit-user-select: none;
@@ -619,6 +625,7 @@ select.input,
 textarea.input {
   width: 100%;
   min-height: 48px;
+  font-size: 16px;
   padding: 12px 14px;
   border-radius: var(--r-sm);
   border: 1px solid var(--line);

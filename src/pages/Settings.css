@@ -435,6 +435,7 @@
 }
 .set-key .input {
   padding-right: 52px;
+  font-size: 16px;
 }
 .set-key-toggle {
   position: absolute;
