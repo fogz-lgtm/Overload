@@ -25,10 +25,12 @@ Overload is inspired by AI-coached gym apps like Gravl, rebuilt in the open: no 
 - **Your split, your way.** Pick a preset (full body, upper/lower, push/pull/legs, PPL + upper/lower, push/pull/core, or a body-part split) or build your own rotation from any mix of days. Run it in order, picking up where you left off, or let the engine choose whichever day you're freshest for. Leave it on automatic and the split follows how many days a week you train.
 - **Tells you what to lift, and why.** Every exercise comes with a target weight, reps and reps-in-reserve plus a plain-English reason ("You hit 3×10 @ 80 kg with ~2 in reserve, so +2.5 kg"). Tap ⓘ to read it.
 - **Adjusts mid-workout.** If a set was far easier or harder than prescribed, the remaining sets re-target automatically.
+- **See the week ahead.** Pick the days you train and the Train screen shows the week with each session's type. Tap a day to see its workout: upcoming sessions are forecast by playing your plan forward (recovery, progression and your split's rotation included), rest days say what's next, and past days show what you did. Arrows step through the weeks.
 - **Shows you how.** Every exercise has a short form-demo video, on its page, in the workout preview and one tap from the logger. Prefer a different coach? Paste any YouTube link to swap it, or add one to your custom exercises. Videos play in YouTube's privacy-enhanced mode and only load when you press play; the thumbnails come from YouTube's image server.
 - **Tracks muscle recovery.** An 18-muscle body map shows residual fatigue from lifting *and* from runs, rides, hikes and sport, so leg day doesn't land the morning after a hard trail run.
 - **Progress you can trust.** Strength score against bodyweight standards, estimated 1RM trends per lift, weekly hard sets per muscle against target ranges, and automatic PR detection.
 - **Works anywhere you train.** Save multiple gyms (home, commercial, hotel, bodyweight) with their equipment and switch with a tap. Includes 125 exercises plus your own custom ones, with swaps that hit the same muscles.
+- **Knows your equipment.** Tell each gym which dumbbells, plates, bars and kettlebells it has, and how its weight stacks step up. Workouts only prescribe loads you can actually make, the plate diagram uses your plates, and when you outgrow your heaviest dumbbell (or the next one up is a big jump) it adds reps or a set instead of asking for a weight you don't have.
 - **Your data is yours.** Stored locally in IndexedDB. One-tap JSON backup/restore, CSV export, and **import from Strong or Hevy** so you keep your history.
 - **Optional AI coach.** Bring your own Anthropic API key to chat with a coach that sees your logs. It can build a workout from "30 minutes, hotel gym, my shoulder's sore", diagnose a stalled lift from its history, and log a run you mention. Everything else works without it.
 - **Installable PWA.** Add it to your home screen; it works offline (form videos need a connection).
@@ -74,7 +76,7 @@ In **Settings → AI coach**, paste an [Anthropic API key](https://console.anthr
 
 ```
 src/
-  engine/      Pure training logic + tests (recovery, progression, generator, analytics, sample-data simulator, CSV importers, exercise library and form videos)
+  engine/      Pure training logic + tests (recovery, progression, generator, equipment kits, weekly schedule and forecast, analytics, sample-data simulator, CSV importers, exercise library and form videos)
   db/          Dexie (IndexedDB) schema, queries, backup/restore and CSV import
   ai/          Optional Claude coach: training snapshot, tools, streaming tool loop
   pages/       Screens (Train, Workout, Summary, History, Progress, Library, Coach, Settings, Onboarding) + per-screen CSS

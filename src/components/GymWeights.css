@@ -1,0 +1,116 @@
+/* Gym weights: collapsible blocks inside the gym sheet. */
+.gw-block {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.gw-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 13px 14px;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.gw-head > svg {
+  flex-shrink: 0;
+  color: var(--text-3);
+  transition: transform var(--d2) var(--ease);
+}
+.gw-block.open .gw-head > svg {
+  transform: rotate(180deg);
+}
+.gw-title {
+  display: block;
+  font-weight: 650;
+  font-size: 15px;
+}
+.gw-summary {
+  display: block;
+  margin-top: 1px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.gw-body {
+  padding: 2px 14px 16px;
+  gap: 16px;
+}
+.gw-bars {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+.gw-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text-2);
+}
+.gw-bar-input {
+  position: relative;
+}
+.gw-bar-input .input {
+  padding-right: 38px;
+}
+.gw-unit {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-3);
+  font-size: 14px;
+  pointer-events: none;
+}
+.gw-plates {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.gw-plates li {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+}
+.gw-plates li:first-child {
+  border-top: 0;
+}
+.gw-plate {
+  font-weight: 650;
+}
+.gw-count {
+  min-width: 64px;
+  text-align: right;
+  font-size: 14px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.gw-count.none {
+  color: var(--text-3);
+}
+.gw-range {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.gw-range label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text-2);
+}
+.gw-weights .chip {
+  min-width: 52px;
+  justify-content: center;
+}

@@ -1359,13 +1359,58 @@ input[type='range']::-moz-range-thumb {
 .week-strip {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 4px;
+  gap: 2px;
 }
 .wday {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+  min-width: 0;
+  padding: 6px 0 5px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+button.wday {
+  cursor: pointer;
+  transition: background var(--d2);
+}
+button.wday:active {
+  background: var(--highlight);
+}
+@media (hover: hover) {
+  button.wday:hover {
+    background: var(--highlight);
+  }
+}
+button.wday.selected {
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+.wday-type {
+  /* The session colour, pulled toward the text colour so small labels stay readable in both themes. */
+  color: color-mix(in oklab, var(--tag-color, var(--text-3)) 70%, var(--text-1));
+  height: 12px;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 12px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+@media (max-width: 360px) {
+  .wday-type {
+    font-size: 8.5px;
+    letter-spacing: -0.01em;
+  }
+}
+.wday.planned:not(.lifted) .wday-dot {
+  border-style: dashed;
+  border-color: var(--line-strong);
 }
 .wday-label {
   font-size: 11px;
@@ -1392,7 +1437,8 @@ input[type='range']::-moz-range-thumb {
   background: transparent;
   color: var(--text-3);
 }
-.wday.today .wday-dot {
+.wday.today .wday-dot,
+.wday.today.planned:not(.lifted) .wday-dot {
   border: 2px solid var(--accent);
   color: var(--text-1);
 }

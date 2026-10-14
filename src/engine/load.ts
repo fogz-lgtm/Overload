@@ -1,3 +1,4 @@
+import type { Kit } from './kit';
 import type { Loading, Units } from './types';
 
 export const LB_PER_KG = 2.20462262;
@@ -83,14 +84,16 @@ export function platesPerSide(totalKg: number, units: Units): { plates: number[]
   return { plates, remainder: Math.round(perSide * 100) / 100 };
 }
 
-/** Ramp-up sets before the first heavy working set of a lift. */
+/** Ramp-up sets before the first heavy working set of a lift, on the loads `kit` allows. */
 export function warmupSets(
   workingKg: number,
   loading: Loading,
   units: Units,
   heavy: boolean,
   emptyKg = loading === 'barbell' ? BAR_KG[units] : 0,
+  kit?: Kit,
 ): { weightKg: number; reps: number }[] {
+  const snap = kit ? kit.snap : (kg: number) => roundLoad(kg, loading, units);
   if (loading === 'bodyweight' || loading === 'band' || workingKg <= 0) return [];
   const scheme = heavy
     ? [
@@ -107,7 +110,7 @@ export function warmupSets(
   const floor = emptyKg;
   if (emptyKg > 0 && workingKg > emptyKg * 1.6) out.push({ weightKg: emptyKg, reps: 10 });
   for (const [pct, reps] of scheme) {
-    const w = roundLoad(Math.max(floor, workingKg * pct!), loading, units);
+    const w = snap(Math.max(floor, workingKg * pct!));
     const last = out[out.length - 1];
     if (w >= workingKg - 1e-6) continue;
     if (last && w <= last.weightKg + 1e-6) continue;

@@ -2,15 +2,17 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Icon, type IconName } from '../components/Icon';
+import { cleanWeights, GymWeightsEditor } from '../components/GymWeights';
 import { Sheet } from '../components/Sheet';
 import { splitCadence, SplitSheet } from '../components/SplitSheet';
 import { exportBackup, exportCsv, importWorkoutCsv, restoreBackup, type CsvImportSummary } from '../db/backup';
 import { ALL_EQUIPMENT, EQUIPMENT_LABEL, GYM_PRESETS, db } from '../db/db';
 import { eraseAll } from '../db/demo';
-import { saveSplit } from '../db/repo';
+import { refreshPlan, saveSplit, saveTrainingDays } from '../db/repo';
 import { splitDays, splitName } from '../engine/generator';
+import { trainingDays, trainingDaysText, WEEKDAY_SHORT } from '../engine/schedule';
 import { formatWeight, formatWeightWhole, fromDisplay } from '../engine/load';
-import type { Equipment, Experience, Goal, Gym, Profile, Sex, Split, Units } from '../engine/types';
+import type { Equipment, Experience, Goal, Gym, GymWeights, Profile, Sex, Split, Units } from '../engine/types';
 import { dayKey, uid } from '../engine/util';
 import { download, formatDate, useProfile } from '../hooks';
 import { getTheme, setTheme, type ThemePref } from '../theme';
@@ -320,7 +322,7 @@ export function Settings() {
         <div className="group">
           <Row icon="target" label="Goal" value={titleOf(GOALS, profile.goal)} onClick={() => setPanel('goal')} />
           <Row icon="medal" label="Experience" value={titleOf(EXPERIENCE, profile.experience)} onClick={() => setPanel('experience')} />
-          <Row icon="calendar" label="Days per week" value={<span className="num">{profile.daysPerWeek} days</span>} onClick={() => setPanel('days')} />
+          <Row icon="calendar" label="Training days" sub={trainingDaysText(trainingDays(profile))} value={<span className="num">{trainingDays(profile).length} a week</span>} onClick={() => setPanel('days')} />
           <Row
             icon="repeat"
             label="Split"
@@ -333,7 +335,7 @@ export function Settings() {
         </div>
       </Section>
 
-      <GymsSection activeGymId={profile.activeGymId} />
+      <GymsSection activeGymId={profile.activeGymId} units={profile.units} />
 
       <Section title="AI coach">
         <div className="group">
@@ -397,7 +399,7 @@ export function Settings() {
           />
         </Sheet>
       )}
-      {panel === 'days' && <DaysSheet days={profile.daysPerWeek} split={profile.split} onClose={close} />}
+      {panel === 'days' && <DaysSheet days={trainingDays(profile)} split={profile.split} onClose={close} />}
       {panel === 'split' && (
         <SplitSheet
           value={profile.split}
@@ -510,31 +512,47 @@ function ProfileSheet({ profile, onClose }: { profile: Profile; onClose: () => v
 
 // ── Training sheets ────────────────────────────────────────────────────────
 
-function DaysSheet({ days, split, onClose }: { days: number; split: Split | undefined; onClose: () => void }) {
+function DaysSheet({ days, split, onClose }: { days: number[]; split: Split | undefined; onClose: () => void }) {
   const [shown, setShown] = useState(days);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const pending = useRef<number[] | null>(null);
+  // Rebuilding the plan waits for a pause in tapping; closing the sheet does it at once.
+  const flush = useCallback(() => {
+    clearTimeout(timer.current);
+    const next = pending.current;
+    if (!next) return;
+    pending.current = null;
+    void saveTrainingDays(next);
+    toast(`Training ${trainingDaysText(next)}`, { icon: 'check', tone: 'accent' });
+  }, []);
+  useEffect(() => flush, [flush]);
+
+  const toggle = (d: number) => {
+    const next = shown.includes(d) ? shown.filter((x) => x !== d) : [...shown, d].sort((a, b) => a - b);
+    if (!next.length) return;
+    haptics.tap();
+    setShown(next);
+    void db.profile.update('me', { trainingDays: next, daysPerWeek: next.length });
+    pending.current = next;
+    clearTimeout(timer.current);
+    timer.current = setTimeout(flush, 700);
+  };
+
   return (
-    <Sheet open onClose={onClose} title="Days per week" subtitle="How many sessions a week. Workouts adapt to whatever you've recovered from.">
+    <Sheet open onClose={onClose} title="Training days" subtitle="Pick the days you lift. The week view plans each one.">
       <div className="stack lg">
-        <div className="set-days" role="group" aria-label="Days per week">
-          {[2, 3, 4, 5, 6].map((d) => (
-            <button
-              key={d}
-              type="button"
-              className="set-day"
-              aria-pressed={shown === d}
-              onClick={() => {
-                setShown(d);
-                void saveProfile({ daysPerWeek: d }, `Training ${d} days a week`);
-                dismissSheet(420);
-              }}
-            >
-              <span className="display">{d}</span>
-              <span className="set-day-unit">days</span>
+        <div className="set-days set-weekdays" role="group" aria-label="Training days">
+          {WEEKDAY_SHORT.map((label, d) => (
+            <button key={label} type="button" className="set-day" aria-pressed={shown.includes(d)} onClick={() => toggle(d)}>
+              <span className="set-day-unit">{label}</span>
+              <span className="set-day-check" aria-hidden="true">
+                <Icon name="check" size={14} />
+              </span>
             </button>
           ))}
         </div>
-        <p className="muted center set-days-note" key={shown}>
-          {splitText(shown, split)}
+        <p className="muted center set-days-note" key={shown.join()}>
+          <strong style={{ color: 'var(--text-1)' }}>{shown.length} days a week.</strong> {splitText(shown.length, split)}
         </p>
       </div>
     </Sheet>
@@ -592,7 +610,7 @@ function LengthSheet({ minutes, onClose }: { minutes: number; onClose: () => voi
 
 // ── Gyms ───────────────────────────────────────────────────────────────────
 
-function GymsSection({ activeGymId }: { activeGymId: string }) {
+function GymsSection({ activeGymId, units }: { activeGymId: string; units: Units }) {
   const gyms = useLiveQuery(async () => (await db.gyms.toArray()).sort((a, b) => a.name.localeCompare(b.name)));
   const [editing, setEditing] = useState<Gym | 'new' | null>(null);
   const close = useCallback(() => setEditing(null), []);
@@ -629,20 +647,21 @@ function GymsSection({ activeGymId }: { activeGymId: string }) {
           <span className="set-row-label">Add gym</span>
         </button>
       </div>
-      <p className="set-footnote small">Workouts only use equipment at your active gym. Tap a gym to switch.</p>
+      <p className="set-footnote small">Workouts only use equipment at your active gym, and only weights you can load there. Tap a gym to switch.</p>
 
       {editing !== null && (
         <Sheet open onClose={close} title={editing === 'new' ? 'Add gym' : 'Edit gym'} subtitle={editing === 'new' ? 'Start from a preset, then fine-tune.' : undefined}>
-          <GymEditor gym={editing === 'new' ? null : editing} gyms={gyms} activeGymId={activeGymId} />
+          <GymEditor gym={editing === 'new' ? null : editing} gyms={gyms} activeGymId={activeGymId} units={units} />
         </Sheet>
       )}
     </Section>
   );
 }
 
-function GymEditor({ gym, gyms, activeGymId }: { gym: Gym | null; gyms: Gym[]; activeGymId: string }) {
+function GymEditor({ gym, gyms, activeGymId, units }: { gym: Gym | null; gyms: Gym[]; activeGymId: string; units: Units }) {
   const [name, setName] = useState(gym?.name ?? '');
   const [equipment, setEquipment] = useState<Equipment[]>(gym?.equipment ?? []);
+  const [weights, setWeights] = useState<GymWeights>(gym?.weights ?? {});
   const [preset, setPreset] = useState<string | null>(null);
   const equipmentLabel = useId();
   const others = gyms.filter((g) => g.id !== gym?.id);
@@ -664,8 +683,11 @@ function GymEditor({ gym, gyms, activeGymId }: { gym: Gym | null; gyms: Gym[]; a
     const trimmed = name.trim();
     if (!trimmed) return;
     const ordered = ALL_EQUIPMENT.filter((e) => equipment.includes(e));
-    if (gym) await db.gyms.update(gym.id, { name: trimmed, equipment: ordered });
-    else await db.gyms.add({ id: uid(), name: trimmed, equipment: ordered });
+    const kit = cleanWeights(weights);
+    if (gym) await db.gyms.update(gym.id, { name: trimmed, equipment: ordered, weights: kit });
+    else await db.gyms.add({ id: uid(), name: trimmed, equipment: ordered, ...(kit && { weights: kit }) });
+    // Today's plan should only use what this gym has.
+    if (gym?.id === activeGymId) void refreshPlan();
     haptics.success();
     toast(gym ? `${trimmed} saved` : `${trimmed} added`, { icon: 'check', tone: 'accent' });
     dismissSheet();
@@ -716,6 +738,14 @@ function GymEditor({ gym, gyms, activeGymId }: { gym: Gym | null; gyms: Gym[]; a
         </div>
         {!equipment.length && <p className="faint small">Nothing selected, so workouts here will be bodyweight only.</p>}
       </div>
+
+      {equipment.some((e) => e !== 'squat_rack' && e !== 'bench' && e !== 'pullup_bar' && e !== 'dip_station' && e !== 'bands') && (
+        <div className="field">
+          <span className="set-field-head">Weights</span>
+          <GymWeightsEditor equipment={equipment} units={units} value={weights} onChange={setWeights} />
+          <p className="faint small">Workouts only prescribe loads you can make here. Leave anything you're unsure of; it assumes a well-stocked gym.</p>
+        </div>
+      )}
 
       <button type="submit" className="btn primary block lg" disabled={!name.trim()}>
         {gym ? 'Save gym' : 'Add gym'}

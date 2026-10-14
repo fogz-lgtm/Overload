@@ -334,6 +334,39 @@
   color: var(--accent);
   animation: set-pop var(--d3) var(--spring) both;
 }
+.set-weekdays {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+.set-weekdays .set-day {
+  aspect-ratio: auto;
+  padding: 12px 0 10px;
+  gap: 8px;
+}
+.set-weekdays .set-day-unit {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+}
+.set-day-check {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--line-strong);
+  color: transparent;
+  transition: background var(--d2), border-color var(--d2), color var(--d2);
+}
+.set-day[aria-pressed='true'] .set-day-check {
+  background: var(--accent-fill);
+  border-color: transparent;
+  color: var(--accent-ink);
+}
+.set-day[aria-pressed='true'] .set-day-unit {
+  color: var(--text-1);
+}
 .set-days-note {
   animation: set-fade var(--d2) var(--ease) both;
 }

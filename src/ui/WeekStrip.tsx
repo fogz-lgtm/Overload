@@ -1,33 +1,55 @@
 import { Icon } from '../components/Icon';
+import type { DayType } from '../engine/types';
+import { DAY_SHORT, dayStyle } from './days';
 
 export interface DayMark {
-  date: Date;
+  /** Midnight at the start of the day. */
+  day: number;
   lifted: boolean;
   cardio: boolean;
+  /** Session type done that day, or planned for it. */
+  type?: DayType;
+  planned?: boolean;
 }
 
-/** Monday–Sunday strip of the current week: filled = lifted, dot = cardio, ring = today. */
-export function WeekStrip({ days, now }: { days: DayMark[]; now: number }) {
-  const today = new Date(now).toDateString();
+/**
+ * Monday–Sunday strip: filled = lifted, ring = today, label = the session
+ * done or planned that day. Tap a day to see it.
+ */
+export function WeekStrip({ days, today, selected, onSelect }: { days: DayMark[]; today: number; selected?: number; onSelect?: (day: number) => void }) {
   return (
-    <div className="week-strip" role="list" aria-label="This week">
+    <div className="week-strip" role="group" aria-label="Week">
       {days.map((d) => {
-        const isToday = d.date.toDateString() === today;
-        const future = d.date.getTime() > now && !isToday;
-        const label = d.date.toLocaleDateString(undefined, { weekday: 'narrow' });
-        const full = d.date.toLocaleDateString(undefined, { weekday: 'long' });
-        return (
-          <div
-            key={d.date.toISOString()}
-            role="listitem"
-            className={`wday${d.lifted ? ' lifted' : ''}${isToday ? ' today' : ''}${future ? ' future' : ''}`}
-            aria-label={`${full}: ${d.lifted ? 'lifted' : d.cardio ? 'cardio' : future ? 'upcoming' : 'rest'}`}
-          >
-            <span className="wday-label">{label}</span>
-            <span className="wday-dot">
-              {d.lifted ? <Icon name="check" size={16} /> : <span>{d.date.getDate()}</span>}
+        const date = new Date(d.day);
+        const isToday = d.day === today;
+        const future = d.day > today;
+        const full = date.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+        const status = d.lifted ? 'done' : d.planned ? 'planned' : d.cardio ? 'cardio' : 'rest';
+        const className = `wday${d.lifted ? ' lifted' : ''}${isToday ? ' today' : ''}${future ? ' future' : ''}${d.planned ? ' planned' : ''}${selected === d.day ? ' selected' : ''}`;
+        // Screen readers hear "Today, Wednesday, October 14 Push planned"; the visible letters stay decorative.
+        const body = (
+          <>
+            <span className="wday-label" aria-hidden="true">
+              {date.toLocaleDateString(undefined, { weekday: 'narrow' })}
             </span>
-            <span className={`wday-cardio${d.cardio ? ' on' : ''}`} />
+            <span className="sr-only">{`${isToday ? 'Today, ' : ''}${full} `}</span>
+            <span className="wday-dot" aria-hidden="true">
+              {d.lifted ? <Icon name="check" size={16} /> : <span>{date.getDate()}</span>}
+            </span>
+            <span className="wday-type" style={d.type ? dayStyle(d.type) : undefined}>
+              {d.type ? DAY_SHORT[d.type] : ''}
+            </span>
+            <span className="sr-only">{` ${status}`}</span>
+            <span className={`wday-cardio${d.cardio ? ' on' : ''}`} aria-hidden="true" />
+          </>
+        );
+        return onSelect ? (
+          <button key={d.day} type="button" className={className} aria-pressed={selected === d.day} onClick={() => onSelect(d.day)}>
+            {body}
+          </button>
+        ) : (
+          <div key={d.day} className={className}>
+            {body}
           </div>
         );
       })}

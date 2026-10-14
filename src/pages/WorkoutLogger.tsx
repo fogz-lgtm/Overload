@@ -11,10 +11,11 @@ import { db } from '../db/db';
 import { discardWorkout, finishWorkout } from '../db/repo';
 import type { PR } from '../engine/analytics';
 import { estimateMinutes } from '../engine/generator';
+import { kitFor } from '../engine/kit';
 import { formatWeight, fromDisplay, toDisplay } from '../engine/load';
 import { MUSCLES } from '../engine/muscles';
 import { autoregulate, groupSessions, isTimed } from '../engine/progression';
-import type { Exercise, PerformedSet, Profile, SetEntry, Workout, WorkoutExercise } from '../engine/types';
+import type { Exercise, GymWeights, PerformedSet, Profile, SetEntry, Workout, WorkoutExercise } from '../engine/types';
 import { uid } from '../engine/util';
 import { formatClock, useExercises, useNow, useProfile, useTrainingState } from '../hooks';
 import { haptics } from '../ui/haptics';
@@ -38,6 +39,7 @@ export function WorkoutLogger() {
   const ex = useExercises();
   const training = useTrainingState();
   const stored = useLiveQuery(async () => (await db.workouts.get(id)) ?? null, [id]);
+  const weights = useLiveQuery(async () => (stored ? (await db.gyms.get(stored.gymId))?.weights : undefined), [stored?.gymId]);
   const [w, setW] = useState<Workout | null>(null);
   const [rest, setRest] = useState<Rest | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
@@ -132,7 +134,7 @@ export function WorkoutLogger() {
     const doneSet: SetEntry = { ...s, weightKg: s.weightKg ?? s.targetWeightKg, reps: s.reps ?? s.targetReps, done: true, completedAt: Date.now() };
     let sets = we.sets.map((x, i) => (i === idx ? doneSet : x));
     if (exercise) {
-      const r = autoregulate(sets, idx, exercise, units);
+      const r = autoregulate(sets, idx, exercise, units, kitFor(exercise, weights, units));
       sets = r.sets;
       if (r.note) setNotes((n) => ({ ...n, [we.id]: r.note! }));
     }
@@ -256,6 +258,7 @@ export function WorkoutLogger() {
               onRemoveSet={(setId) => removeSet(we, setId)}
               onMenu={() => setMenuFor(we)}
               onDemo={() => exercise && setDemoFor(exercise)}
+              weights={weights}
             />
           );
         })}
@@ -409,6 +412,7 @@ function ExerciseCard({
   onRemoveSet,
   onMenu,
   onDemo,
+  weights,
 }: {
   we: WorkoutExercise;
   index: number;
@@ -426,9 +430,11 @@ function ExerciseCard({
   onRemoveSet: (setId: string) => void;
   onMenu: () => void;
   onDemo: () => void;
+  weights?: GymWeights;
 }) {
   const [why, setWhy] = useState(false);
   const video = useExerciseVideo(we.exerciseId);
+  const kit = exercise ? kitFor(exercise, weights, units) : undefined;
   const timed = exercise ? isTimed(exercise) : false;
   const bodyweight = exercise?.loading === 'bodyweight' || exercise?.loading === 'band';
   const working = we.sets.filter((s) => s.kind === 'working');
@@ -568,7 +574,7 @@ function ExerciseCard({
             <button type="button" className="btn ghost sm" onClick={onAddSet}>
               <Icon name="plus" size={16} /> Add set
             </button>
-            {exercise?.equipment.includes('barbell') && next && (next.weightKg ?? next.targetWeightKg) > 0 && <PlateStack totalKg={next.weightKg ?? next.targetWeightKg} units={units} />}
+            {kit?.bar !== undefined && next && (next.weightKg ?? next.targetWeightKg) > 0 && <PlateStack totalKg={next.weightKg ?? next.targetWeightKg} kit={kit} units={units} />}
           </div>
         </>
       )}

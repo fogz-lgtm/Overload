@@ -127,13 +127,40 @@ export interface Profile {
   demo?: boolean;
   /** Chosen split; when absent the split follows days per week. */
   split?: Split;
+  /** Weekdays the lifter trains, 0 = Monday … 6 = Sunday. When absent they're spread across the week. */
+  trainingDays?: number[];
   ai?: { apiKey: string; model: string };
+}
+
+/** How many pairs of one plate size a gym has. */
+export interface PlatePair {
+  kg: number;
+  pairs: number;
+}
+
+/**
+ * The actual weights at a gym, all in kg. Anything left out falls back to a
+ * well-stocked commercial gym.
+ */
+export interface GymWeights {
+  barKg?: number;
+  ezBarKg?: number;
+  trapBarKg?: number;
+  /** What the Smith machine bar counts as (0 when it's counterbalanced). */
+  smithBarKg?: number;
+  plates?: PlatePair[];
+  /** Every dumbbell on the rack (per dumbbell). */
+  dumbbells?: number[];
+  kettlebells?: number[];
+  /** Smallest jump on pin-loaded machines and cable stacks. */
+  stackStepKg?: number;
 }
 
 export interface Gym {
   id: string;
   name: string;
   equipment: Equipment[];
+  weights?: GymWeights;
 }
 
 export type SetKind = 'warmup' | 'working';

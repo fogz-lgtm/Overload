@@ -1,4 +1,5 @@
-import { BAR_KG, estimate1RM, formatWeight, lbToKg, loadIncrement, roundLoad, toDisplay, fromDisplay, weightForReps } from './load';
+import { implementNoun, kitFor, type Kit } from './kit';
+import { estimate1RM, formatWeight, toDisplay, weightForReps } from './load';
 import type { Exercise, Experience, Goal, PerformedSet, Profile, SetEntry, Units } from './types';
 
 const DAY = 86_400_000;
@@ -99,6 +100,8 @@ export interface ProgressionInput {
   now: number;
   /** History of swap-compatible exercises, used to seed a first session. */
   related?: { exercise: Exercise; history: PerformedSet[] }[];
+  /** The loads this gym can actually make; a well-stocked gym when absent. */
+  kit?: Kit;
 }
 
 interface Session {
@@ -132,14 +135,30 @@ export function bestE1RM(sets: PerformedSet[]): number {
 
 const EXPERIENCE_SEED: Record<Experience, number> = { beginner: 0.55, intermediate: 0.8, advanced: 1 };
 
-function stepKg(ex: Exercise, units: Units, weightKg: number): number {
-  const inc = loadIncrement(ex.loading === 'bodyweight' ? 'bodyweight' : ex.loading, units);
+/** Reps past the top of the range a lifter builds to when the next load up isn't there yet. */
+const EXTRA_REPS = 5;
+
+/** The next load up. Heavy barbell squats and hinges move two steps at a time. */
+function nextUp(kit: Kit, ex: Exercise, weightKg: number): number | undefined {
+  const one = kit.up(weightKg);
   const bigLowerBody =
     ex.loading === 'barbell' &&
     ex.mechanic === 'compound' &&
     (ex.pattern === 'squat' || ex.pattern === 'hinge') &&
     weightKg >= 60;
-  return fromDisplay(bigLowerBody ? inc * 2 : inc, units);
+  return bigLowerBody && one !== undefined ? (kit.up(one) ?? one) : one;
+}
+
+/** A lighter load for backing off, within `maxCut` of the current one; undefined when the gym has none that close. */
+function backOff(kit: Kit, weightKg: number, cut: number, maxCut = cut * 2): number | undefined {
+  let w = kit.snap(weightKg * (1 - cut));
+  if (w >= weightKg - 0.01) w = kit.down(weightKg) ?? weightKg;
+  return w < weightKg - 0.01 && w >= weightKg * (1 - maxCut) - 0.01 ? w : undefined;
+}
+
+/** Inverse Epley: reps to failure at `weightKg` for a given e1RM. */
+function repsAt(e1rm: number, weightKg: number): number {
+  return weightKg > 0 ? 30 * (e1rm / weightKg - 1) : 0;
 }
 
 function avg(xs: number[]): number {
@@ -156,22 +175,52 @@ function describeSets(sets: PerformedSet[], units: Units, timed: boolean): strin
 
 /** The empty implement: a barbell can't be loaded lighter than the bar itself. */
 export function minLoadKg(ex: Exercise, units: Units): number {
-  if (ex.equipment.includes('trap_bar')) return units === 'kg' ? 25 : lbToKg(55);
-  if (ex.equipment.includes('ez_bar')) return units === 'kg' ? 10 : lbToKg(25);
-  if (ex.equipment.includes('barbell')) return BAR_KG[units];
-  return 0;
+  return kitFor(ex, undefined, units).bar ?? 0;
 }
 
 export function prescribe(input: ProgressionInput): Prescription {
-  const rx = prescribeRaw(input);
-  const floor = minLoadKg(input.exercise, input.profile.units);
-  if (rx.weightKg > 0 && rx.weightKg < floor) {
-    return { ...rx, weightKg: floor, rationale: `${rx.rationale} Starting with the empty bar.` };
-  }
-  return rx;
+  const kit = input.kit ?? kitFor(input.exercise, undefined, input.profile.units);
+  return fitToKit(prescribeRaw(input, kit), kit, input.exercise, input.profile.units);
 }
 
-function prescribeRaw(input: ProgressionInput): Prescription {
+/**
+ * Lands a prescription on a load the gym can actually make. When that moves
+ * the weight noticeably (the heaviest dumbbell is lighter than ideal, or the
+ * rack has gaps) the reps move with it so the effort stays the same.
+ */
+function fitToKit(rx: Prescription, kit: Kit, ex: Exercise, units: Units): Prescription {
+  if (rx.weightKg <= 0 || kit.implement === 'band' || kit.implement === 'bodyweight') return rx;
+  const fitted = kit.snap(rx.weightKg);
+  if (Math.abs(fitted - rx.weightKg) < 0.05) return { ...rx, weightKg: fitted };
+  if (fitted > rx.weightKg && fitted <= kit.min + 0.01) {
+    const start = kit.bar !== undefined ? 'Starting with the empty bar.' : `Starting with the lightest ${implementNoun(kit.implement)} here.`;
+    return { ...rx, weightKg: fitted, rationale: `${rx.rationale} ${start}` };
+  }
+  if (isTimed(ex) || Math.abs(fitted - rx.weightKg) / rx.weightKg < 0.05) return { ...rx, weightKg: fitted };
+
+  // The loads either side of the ideal; take the nearer one that keeps the reps in range.
+  const [lo, hi] = rx.repRange;
+  const e1rm = estimate1RM(rx.weightKg, rx.reps + rx.rir);
+  // Epley undersells high reps at light loads, so rounding never pushes reps below the range.
+  const repsFor = (w: number) => Math.round(Math.min(hi + EXTRA_REPS, Math.max(lo, repsAt(e1rm, w) - rx.rir)));
+  const below = fitted <= rx.weightKg ? fitted : kit.down(fitted);
+  const above = fitted >= rx.weightKg ? fitted : kit.up(fitted);
+  const options = [below, above].filter((w): w is number => w !== undefined && w > 0);
+  const miss = (w: number) => {
+    const r = repsAt(e1rm, w) - rx.rir;
+    return r < lo ? lo - r : r > hi + EXTRA_REPS ? r - hi - EXTRA_REPS : 0;
+  };
+  options.sort((a, b) => miss(a) - miss(b) || Math.abs(a - rx.weightKg) - Math.abs(b - rx.weightKg));
+  const weightKg = options[0] ?? fitted;
+  const reps = repsFor(weightKg);
+  const atMax = kit.max !== undefined && weightKg >= kit.max - 0.01 && weightKg < rx.weightKg;
+  const why = atMax
+    ? `${formatWeight(weightKg, units)} is the heaviest ${implementNoun(kit.implement)} here, so ${reps} reps instead.`
+    : `${formatWeight(weightKg, units)} is the closest load here, so ${reps} reps.`;
+  return { ...rx, weightKg, reps, rationale: `${rx.rationale} ${why}` };
+}
+
+function prescribeRaw(input: ProgressionInput, kit: Kit): Prescription {
   const { exercise: ex, profile, now } = input;
   const { units } = profile;
   const scheme = goalScheme(profile.goal, profile.experience);
@@ -202,7 +251,7 @@ function prescribeRaw(input: ProgressionInput): Prescription {
       const relBest = bestE1RM(groupSessions(rel.history)[0]?.sets ?? []);
       if (relBest > 0 && rel.exercise.bwRatio && ex.bwRatio && isWeighted(rel.exercise)) {
         const e1rm = relBest * (ex.bwRatio / rel.exercise.bwRatio);
-        const weightKg = roundLoad(weightForReps(e1rm, reps + rir) * 0.95, ex.loading, units);
+        const weightKg = weightForReps(e1rm, reps + rir) * 0.95;
         return {
           ...base,
           weightKg,
@@ -214,7 +263,7 @@ function prescribeRaw(input: ProgressionInput): Prescription {
     }
     const ratio = ex.bwRatio ?? 0.25;
     const tenRm = ratio * profile.bodyweightKg * EXPERIENCE_SEED[profile.experience];
-    const weightKg = roundLoad(weightForReps(estimate1RM(tenRm, 10), reps + rir), ex.loading, units);
+    const weightKg = weightForReps(estimate1RM(tenRm, 10), reps + rir);
     return {
       ...base,
       weightKg,
@@ -236,11 +285,14 @@ function prescribeRaw(input: ProgressionInput): Prescription {
   // Long layoff: ease back in before applying normal progression rules.
   if (daysOff > 21 && isWeighted(ex)) {
     const cut = daysOff > 42 ? 0.8 : 0.9;
+    const eased = backOff(kit, topWeight, 1 - cut);
     return {
       ...base,
-      weightKg: roundLoad(topWeight * cut, ex.loading, units),
-      reps: range[0] + 1,
-      rationale: `It's been ${Math.round(daysOff / 7)} weeks since you last did this (${lastText}). Easing back in at ${Math.round(cut * 100)}%.`,
+      weightKg: eased ?? topWeight,
+      reps: range[0] + (eased ? 1 : 0),
+      rationale: eased
+        ? `It's been ${Math.round(daysOff / 7)} weeks since you last did this (${lastText}). Easing back in at ${Math.round((eased / topWeight) * 100)}%.`
+        : `It's been ${Math.round(daysOff / 7)} weeks since you last did this (${lastText}). Same weight, bottom of the range, to ease back in.`,
     };
   }
 
@@ -273,32 +325,67 @@ function prescribeRaw(input: ProgressionInput): Prescription {
   }
 
   if (reachedTop && effortOk) {
-    const step = stepKg(ex, units, topWeight);
-    let weightKg = roundLoad(topWeight + step, ex.loading, units);
-    if (weightKg <= topWeight + 0.01) weightKg = topWeight + step;
+    let next = nextUp(kit, ex, topWeight);
+    const e1rm = bestE1RM(working);
     // Lots left in the tank: let the e1RM justify a bigger (capped) jump.
-    if (avgRir !== undefined && avgRir >= rir + 2) {
-      const e1rm = bestE1RM(working);
-      const fromE1rm = roundLoad(Math.min(weightForReps(e1rm, range[0] + rir), topWeight * 1.1), ex.loading, units);
-      weightKg = Math.max(weightKg, fromE1rm);
+    if (next !== undefined && avgRir !== undefined && avgRir >= rir + 2) {
+      const fromE1rm = kit.snap(Math.min(weightForReps(e1rm, range[0] + rir), topWeight * 1.1));
+      if (fromE1rm > next) next = fromE1rm;
+    }
+    // No heavier load here, or the next one is too far to reach the rep range even to failure: build reps first.
+    const fallsShort = next !== undefined && !timed && repsAt(e1rm, next) + 0.01 < range[0] - 1;
+    if ((next === undefined || fallsShort) && minReps < range[1] + EXTRA_REPS) {
+      const reps = Math.min(range[1] + EXTRA_REPS, minReps + (timed ? 5 : 1));
+      const noun = implementNoun(kit.implement);
+      return {
+        ...base,
+        weightKg: topWeight,
+        reps,
+        rationale:
+          next === undefined
+            ? `You hit ${lastText} — top of the range — and ${formatWeight(topWeight, units)} is the heaviest ${noun} here. Keep it and push for ${reps}${unit}.`
+            : `You hit ${lastText}. The next ${noun} up is ${formatWeight(next, units)}, a big jump, so stay at ${formatWeight(topWeight, units)} and build to ${reps}${unit} first.`,
+      };
+    }
+    if (next === undefined) {
+      return {
+        ...base,
+        weightKg: topWeight,
+        reps: minReps,
+        rationale: `${lastText} on the heaviest ${implementNoun(kit.implement)} here. Hold it, slow the lowering down, and keep every rep clean.`,
+      };
+    }
+    const weightKg = next;
+    const startReps = fallsShort ? Math.max(1, Math.floor(repsAt(e1rm, weightKg) - rir)) : range[0];
+    if (startReps < Math.max(3, range[0] - 3)) {
+      return {
+        ...base,
+        weightKg: topWeight,
+        reps: minReps,
+        sets: Math.min(input.sets + 1, 5),
+        rationale: `${lastText}, and the next ${implementNoun(kit.implement)} up (${formatWeight(weightKg, units)}) is still too big a jump. One more set at ${formatWeight(topWeight, units)} instead.`,
+      };
     }
     const jump = toDisplay(weightKg - topWeight, units);
     return {
       ...base,
       weightKg,
-      reps: range[0],
-      rationale: `You hit ${lastText}${avgRir !== undefined ? ` with ~${Math.round(avgRir)} in reserve` : ''} — top of the range. +${Math.round(jump * 10) / 10} ${units}; reset to ${range[0]}${unit} and build back up.`,
+      reps: startReps,
+      rationale: `You hit ${lastText}${avgRir !== undefined ? ` with ~${Math.round(avgRir)} in reserve` : ''} — top of the range. +${Math.round(jump * 10) / 10} ${units}; reset to ${startReps}${unit} and build back up.`,
     };
   }
 
   if (missed && stalled) {
+    const lighter = backOff(kit, topWeight, 0.1);
     return {
       ...base,
-      weightKg: roundLoad(topWeight * 0.9, ex.loading, units),
-      reps: range[0] + 1,
+      weightKg: lighter ?? topWeight,
+      reps: lighter ? range[0] + 1 : range[0],
       sets: Math.max(2, input.sets - 1),
       deload: true,
-      rationale: `No progress for 3 sessions (last: ${lastText}). Backing off 10% with one fewer set to rebuild momentum — this is planned, not a step back.`,
+      rationale: lighter
+        ? `No progress for 3 sessions (last: ${lastText}). Backing off to ${formatWeight(lighter, units)} with one fewer set to rebuild momentum — this is planned, not a step back.`
+        : `No progress for 3 sessions (last: ${lastText}). One fewer set and the bottom of the range to rebuild momentum — this is planned, not a step back.`,
     };
   }
 
@@ -306,10 +393,11 @@ function prescribeRaw(input: ProgressionInput): Prescription {
     const lastAvg = avg(working.map((s) => s.reps));
     if (lastAvg < range[0] - 2) {
       const e1rm = bestE1RM(working);
-      const weightKg = roundLoad(weightForReps(e1rm, range[0] + rir), ex.loading, units);
+      let weightKg = kit.snap(weightForReps(e1rm, range[0] + rir));
+      if (weightKg >= topWeight - 0.01) weightKg = kit.down(topWeight) ?? topWeight;
       return {
         ...base,
-        weightKg: Math.min(weightKg, topWeight),
+        weightKg,
         reps: range[0],
         rationale: `${formatWeight(topWeight, units)} was too heavy for the ${range[0]}–${range[1]} range (${lastText}). Adjusted to match your estimated strength.`,
       };
@@ -350,6 +438,7 @@ export function autoregulate(
   doneIndex: number,
   ex: Exercise,
   units: Units,
+  kit: Kit = kitFor(ex, undefined, units),
 ): { sets: SetEntry[]; note?: string } {
   const s = sets[doneIndex];
   if (!s || s.kind !== 'working' || !s.done || s.reps === undefined || !isWeighted(ex) || isTimed(ex)) return { sets };
@@ -360,11 +449,24 @@ export function autoregulate(
   const hard = s.reps <= s.targetReps - 3 || (s.rir === 0 && s.reps < s.targetReps - 1);
   if (!easy && !hard) return { sets };
 
-  let next = easy ? roundLoad(used + stepKg(ex, units, used), ex.loading, units) : roundLoad(used * 0.925, ex.loading, units);
-  if (easy && next <= used) next = used + stepKg(ex, units, used);
-  if (hard && next >= used) next = Math.max(0, used - stepKg(ex, units, used));
-  next = Math.max(next, minLoadKg(ex, units));
-  if (next === used) return { sets };
+  let next: number | undefined;
+  if (easy) next = nextUp(kit, ex, used);
+  else {
+    next = kit.snap(used * 0.925);
+    if (next >= used - 0.01) next = kit.down(used);
+  }
+  if (next === undefined || Math.abs(next - used) < 0.01) {
+    if (!easy) return { sets };
+    // Already on the heaviest load here: chase reps instead.
+    let bumped = 0;
+    const out = sets.map((x, i) => {
+      if (i <= doneIndex || x.kind !== 'working' || x.done || x.weightKg !== undefined) return x;
+      bumped++;
+      return { ...x, targetReps: x.targetReps + 2 };
+    });
+    if (!bumped) return { sets };
+    return { sets: out, note: `That looked easy, and ${formatWeight(used, units)} is the heaviest ${implementNoun(kit.implement)} here — +2 reps on the next ${bumped === 1 ? 'set' : 'sets'}.` };
+  }
 
   let changed = 0;
   const out = sets.map((x, i) => {

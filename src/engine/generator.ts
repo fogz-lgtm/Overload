@@ -1,11 +1,13 @@
+import { kitFor, type Kit } from './kit';
 import { warmupSets } from './load';
 import { MUSCLES, PRIORITY_MUSCLES, weeklySetTarget } from './muscles';
-import { goalScheme, minLoadKg, prescribe, type Prescription } from './progression';
+import { goalScheme, prescribe, type Prescription } from './progression';
 import type {
   DayType,
   Equipment,
   Exercise,
   ExercisePref,
+  GymWeights,
   MovementPattern,
   MuscleId,
   PerformedSet,
@@ -198,6 +200,8 @@ export interface GenerateInput {
   avoidMuscles?: MuscleId[];
   /** Day types of recent finished workouts, newest first — drives in-order splits. */
   recentDays?: DayType[];
+  /** The weights at this gym; a well-stocked gym when absent. */
+  weights?: GymWeights;
   /** Change to get a different (but equally valid) workout. */
   seed?: number;
 }
@@ -340,10 +344,11 @@ export function buildSets(
   units: Profile['units'],
   withWarmup: boolean,
   heavy: boolean,
+  kit: Kit = kitFor(ex, undefined, units),
 ): SetEntry[] {
   const sets: SetEntry[] = [];
   if (withWarmup && ex.mechanic === 'compound') {
-    for (const w of warmupSets(rx.weightKg, ex.loading, units, heavy, minLoadKg(ex, units))) {
+    for (const w of warmupSets(rx.weightKg, ex.loading, units, heavy, kit.bar ?? 0, kit)) {
       sets.push({ id: uid(), kind: 'warmup', targetWeightKg: w.weightKg, targetReps: w.reps, targetRir: 5, done: false });
     }
   }
@@ -363,10 +368,11 @@ export function buildSets(
 /** Prescribe a single exercise (used by the generator, swaps, and "add exercise"). */
 export function planExercise(
   ex: Exercise,
-  input: Pick<GenerateInput, 'profile' | 'history' | 'now' | 'exercises'>,
+  input: Pick<GenerateInput, 'profile' | 'history' | 'now' | 'exercises' | 'weights'>,
   sets: number,
   withWarmup: boolean,
 ): WorkoutExercise {
+  const kit = kitFor(ex, input.weights, input.profile.units);
   const byId = new Map(input.exercises.map((e) => [e.id, e]));
   const related = (ex.aliases ?? [])
     .map((id) => byId.get(id))
@@ -380,11 +386,12 @@ export function planExercise(
     sets,
     now: input.now,
     related,
+    kit,
   });
   return {
     id: uid(),
     exerciseId: ex.id,
-    sets: buildSets(ex, rx, input.profile.units, withWarmup, input.profile.goal === 'strength' && ex.loading === 'barbell'),
+    sets: buildSets(ex, rx, input.profile.units, withWarmup, input.profile.goal === 'strength' && ex.loading === 'barbell', kit),
     restSec: rx.restSec,
     repRange: rx.repRange,
     rationale: rx.rationale,

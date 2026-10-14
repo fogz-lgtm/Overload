@@ -3,6 +3,7 @@ import { EXERCISES } from '../engine/exercises';
 import { dayTypeOf, generateWorkout, type Focus, type GenerateInput, type GeneratedWorkout } from '../engine/generator';
 import { computeRecovery } from '../engine/recovery';
 import { flattenSets } from '../engine/history';
+import { projectWorkouts, startOfDay, type ProjectedDay } from '../engine/schedule';
 import type { DayType, Exercise, ExercisePref, MuscleId, Split, Workout } from '../engine/types';
 import { uid } from '../engine/util';
 import { weeklySets } from '../engine/volume';
@@ -46,12 +47,51 @@ export async function loadGenerateInput(
     exercises,
     history,
     recentDays: recentDayTypes(workouts),
+    weights: gym?.weights,
     recovery: computeRecovery(history, activities, byId, now),
     weekly: weeklySets(history, byId, now),
     prefs,
     now,
     ...opts,
   };
+}
+
+/**
+ * Upcoming sessions through `until`, played forward from today: the waiting
+ * plan first, then the engine's forecast for each training day after it.
+ */
+export async function loadProjection(until: number): Promise<ProjectedDay[]> {
+  // Mid-reset ("Start fresh") there's briefly no profile; nothing to forecast.
+  if (!(await db.profile.get('me'))) return [];
+  const input = await loadGenerateInput();
+  const [activities, plan, active] = await Promise.all([
+    db.activities.toArray(),
+    db.workouts.where('status').equals('planned').first(),
+    db.workouts.where('status').equals('active').first(),
+  ]);
+  const today = startOfDay(input.now);
+  // A session under way counts as done, as prescribed where it isn't logged yet.
+  const inProgress = active
+    ? flattenSets([
+        {
+          ...active,
+          exercises: active.exercises.map((we) => ({
+            ...we,
+            sets: we.sets.map((s) => ({ ...s, done: true, reps: s.reps ?? s.targetReps, weightKg: s.weightKg ?? s.targetWeightKg, completedAt: s.completedAt ?? input.now })),
+          })),
+        },
+      ])
+    : [];
+  return projectWorkouts(
+    {
+      ...input,
+      history: input.history.concat(inProgress),
+      activities,
+      plan: plan && plan.exercises.length ? plan : undefined,
+      trainedToday: !!active || input.history.some((s) => s.at >= today),
+    },
+    until,
+  );
 }
 
 /** Day types of finished workouts, newest first. */
@@ -90,10 +130,21 @@ export async function generateAndSave(opts: Parameters<typeof loadGenerateInput>
   return savePlan(gen, gymId);
 }
 
+/** Rebuilds the waiting plan after a settings change, unless a workout is under way. */
+export async function refreshPlan(): Promise<void> {
+  if (!(await db.workouts.where('status').equals('active').count())) await generateAndSave();
+}
+
+/** Saves the lifter's training weekdays and rebuilds the waiting plan, since the automatic split follows the count. */
+export async function saveTrainingDays(days: number[]): Promise<void> {
+  await db.profile.update('me', { trainingDays: days, daysPerWeek: days.length });
+  await refreshPlan();
+}
+
 /** Saves the lifter's split (undefined: automatic) and rebuilds the waiting plan to follow it. */
 export async function saveSplit(split: Split | undefined): Promise<void> {
   await db.profile.update('me', { split });
-  if (!(await db.workouts.where('status').equals('active').count())) await generateAndSave();
+  await refreshPlan();
 }
 
 export async function startWorkout(id: string): Promise<void> {

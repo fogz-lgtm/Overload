@@ -4,6 +4,8 @@ import { allExercises, exerciseMap, flattenSets, loadGenerateInput, recentDayTyp
 import { LIFT_NAMES, strengthScore } from '../engine/analytics';
 import { DAY_TYPES, FOCUS_LABEL, generateWorkout, nextRotationIndex, splitDays, splitName, splitOrder, type Focus } from '../engine/generator';
 import { matchExercise } from '../engine/importers';
+import { kitFor } from '../engine/kit';
+import { trainingDays, trainingDaysText } from '../engine/schedule';
 import { formatWeight } from '../engine/load';
 import { MUSCLES, MUSCLE_IDS, weeklySetTarget } from '../engine/muscles';
 import { bestE1RM, groupSessions } from '../engine/progression';
@@ -124,7 +126,7 @@ export async function trainingSnapshot(): Promise<string> {
   const lines: string[] = [];
   lines.push(`Now: ${new Date(now).toLocaleString(undefined, { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`);
   lines.push(
-    `Lifter: ${profile.name || 'unnamed'}; goal ${profile.goal}; ${profile.experience}; trains ${profile.daysPerWeek}×/week, ${profile.sessionMinutes} min sessions; bodyweight ${formatWeight(profile.bodyweightKg, u)}; units ${u}.`,
+    `Lifter: ${profile.name || 'unnamed'}; goal ${profile.goal}; ${profile.experience}; trains ${profile.daysPerWeek}×/week (${trainingDaysText(trainingDays(profile))}), ${profile.sessionMinutes} min sessions; bodyweight ${formatWeight(profile.bodyweightKg, u)}; units ${u}.`,
   );
   const days = splitDays(profile);
   const order = splitOrder(profile);
@@ -135,6 +137,15 @@ export async function trainingSnapshot(): Promise<string> {
     }. build_workout with focus 'auto' follows this split.`,
   );
   lines.push(`Active gym: ${active ? `${active.name} (${active.equipment.join(', ') || 'bodyweight only'})` : 'none'}. Other gyms: ${gyms.filter((g) => g !== active).map((g) => g.name).join(', ') || 'none'}.`);
+  const w = active?.weights;
+  if (w) {
+    const limits: string[] = [];
+    if (w.dumbbells?.length) limits.push(`dumbbells ${[...w.dumbbells].sort((a, b) => a - b).map((d) => formatWeight(d, u, false)).join(', ')} ${u}`);
+    if (w.kettlebells?.length) limits.push(`kettlebells ${[...w.kettlebells].sort((a, b) => a - b).map((d) => formatWeight(d, u, false)).join(', ')} ${u}`);
+    const barMax = w.plates?.length ? kitFor({ loading: 'barbell', equipment: ['barbell'] }, w, u).max : undefined;
+    if (barMax) limits.push(`barbell loads up to ${formatWeight(barMax, u)}`);
+    if (limits.length) lines.push(`Weights at this gym (the engine only prescribes loads these can make): ${limits.join('; ')}.`);
+  }
 
   const tired = MUSCLE_IDS.filter((m) => recovery[m] < 0.95).sort((a, b) => recovery[a] - recovery[b]);
   lines.push(`Recovery: ${tired.length ? tired.map((m) => `${MUSCLES[m].name} ${Math.round(recovery[m] * 100)}%`).join(', ') + '; everything else fresh.' : 'all muscles fresh.'}`);
