@@ -372,12 +372,14 @@ function planMuscles(plan: Pick<Workout, 'exercises'>, exercises: Record<string,
 }
 
 function targetText(we: WorkoutExercise, ex: Exercise | undefined, profile: Profile) {
-  const working = we.sets.filter((s) => s.kind === 'working');
+  const working = we.sets.filter((s) => s.kind === 'working' && !s.drop);
+  const drop = we.sets.some((s) => s.drop);
   const first = working[0];
   const timed = ex ? isTimed(ex) : false;
+  const load = first && first.targetWeightKg > 0 ? formatWeight(first.targetWeightKg, profile.units) : ex?.loading === 'bodyweight' ? 'Bodyweight' : ex?.loading === 'band' ? 'Band' : '';
   return {
     scheme: `${working.length} × ${first?.targetReps ?? '–'}${timed ? 's' : ''}`,
-    load: first && first.targetWeightKg > 0 ? formatWeight(first.targetWeightKg, profile.units) : ex?.loading === 'bodyweight' ? 'Bodyweight' : ex?.loading === 'band' ? 'Band' : '',
+    load: drop ? `${load} + drop` : load,
   };
 }
 
@@ -588,9 +590,9 @@ function ExercisePreview({
             {we.sets.map((s, i) => (
               <div key={s.id} className="group-row" style={{ cursor: 'default' }}>
                 <span className={`badge${s.kind === 'warmup' ? '' : ' accent'}`} style={{ minWidth: 30, justifyContent: 'center' }}>
-                  {s.kind === 'warmup' ? 'W' : i + 1 - (we.sets.length - working.length)}
+                  {s.kind === 'warmup' ? 'W' : s.drop ? 'D' : i + 1 - (we.sets.length - working.length)}
                 </span>
-                <span className="grow muted small">{s.kind === 'warmup' ? 'Warm-up' : `Working · ${s.targetRir} in reserve`}</span>
+                <span className="grow muted small">{s.kind === 'warmup' ? 'Warm-up' : s.drop ? 'Drop set · straight after, close to failure' : `Working · ${s.targetRir} in reserve`}</span>
                 <span className="display" style={{ fontSize: 20 }}>
                   {s.targetWeightKg > 0 ? `${formatWeight(s.targetWeightKg, profile.units)} × ` : ''}
                   {s.targetReps}
@@ -782,10 +784,12 @@ function TimePill({ minutes, open, onToggle }: { minutes: number; open: boolean;
 function TimeBreakdown({ minutes, exercises, sessionMinutes }: { minutes: number; exercises: WorkoutExercise[]; sessionMinutes: number }) {
   let working = 0;
   let warm = 0;
+  let drops = 0;
   let rest = 0;
   for (const we of exercises) {
     for (const s of we.sets) {
       if (s.kind === 'warmup') warm++;
+      else if (s.drop) drops++;
       else {
         working++;
         rest += we.restSec;
@@ -804,6 +808,15 @@ function TimeBreakdown({ minutes, exercises, sessionMinutes }: { minutes: number
           </dt>
           <dd className="num">{setMin} min</dd>
         </div>
+        {drops > 0 && (
+          <div>
+            <dt>
+              {drops} drop {drops === 1 ? 'set' : 'sets'}
+              <span> · no rest</span>
+            </dt>
+            <dd className="num">{Math.round((drops * 45) / 60)} min</dd>
+          </div>
+        )}
         {warm > 0 && (
           <div>
             <dt>{warm} warm-up sets</dt>

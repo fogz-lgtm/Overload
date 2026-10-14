@@ -134,7 +134,7 @@ export function WorkoutDetail() {
       const exercises = performed.flatMap((we) => {
         const def = ex.byId[we.exerciseId];
         if (!def) return [];
-        const working = Math.max(1, doneSets(we).filter((s) => s.kind === 'working').length);
+        const working = Math.max(1, doneSets(we).filter((s) => s.kind === 'working' && !s.drop).length);
         return [planExercise(def, input, working, we.sets.some((s) => s.kind === 'warmup'))];
       });
       if (!exercises.length) {
@@ -460,7 +460,7 @@ function ExerciseCard({ we, exercise, units }: { we: WorkoutExercise; exercise: 
             const isBest = s === best;
             return (
               <tr key={s.id} className={warm ? 'warm' : isBest ? 'best' : undefined}>
-                <td className="wd-set-n num">{warm ? <abbr title="Warm-up set">W</abbr> : ++n}</td>
+                <td className="wd-set-n num">{warm ? <abbr title="Warm-up set">W</abbr> : s.drop ? <abbr title="Drop set">D</abbr> : ++n}</td>
                 <td>
                   <span className="wd-load num">
                     <SetLoad set={s} exercise={exercise} units={units} />

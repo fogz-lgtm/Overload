@@ -1,6 +1,6 @@
 import { implementNoun, kitFor, type Kit } from './kit';
 import { estimate1RM, formatWeight, toDisplay, weightForReps } from './load';
-import type { Exercise, Experience, Goal, PerformedSet, Profile, SetEntry, Units } from './types';
+import type { DropSetPolicy, Exercise, Experience, Goal, PerformedSet, Profile, SetEntry, TrainingStyle, Units } from './types';
 
 const DAY = 86_400_000;
 
@@ -12,6 +12,31 @@ export interface GoalScheme {
   restIsolation: number;
   setsCompound: number;
   setsIsolation: number;
+  /** Extra rest after the most taxing lifts (deadlifts, heavy squats). */
+  heavyRestBonus: number;
+}
+
+/** The goal's scheme with the lifter's own rest times and effort laid over it. */
+export function schemeFor(profile: Pick<Profile, 'goal' | 'experience'> & { style?: TrainingStyle }): GoalScheme {
+  const base = goalScheme(profile.goal, profile.experience);
+  const style = profile.style;
+  if (!style) return base;
+  return {
+    ...base,
+    rir: Math.max(0, base.rir + (style.effort ?? 0)),
+    restCompound: style.restCompoundSec ?? base.restCompound,
+    restIsolation: style.restIsolationSec ?? base.restIsolation,
+    // A rest time the lifter chose is the rest time they get.
+    heavyRestBonus: style.restCompoundSec !== undefined ? 0 : base.heavyRestBonus,
+  };
+}
+
+/** Whether this exercise ends with a drop set under the lifter's policy. Never on bars or bodyweight. */
+export function takesDropSet(ex: Exercise, policy: DropSetPolicy | undefined): boolean {
+  if (!policy || policy === 'off') return false;
+  if (ex.loading === 'barbell' || ex.loading === 'bodyweight' || ex.loading === 'band' || ex.loading === 'kettlebell') return false;
+  if (isTimed(ex)) return false;
+  return policy === 'most' || ex.mechanic === 'isolation';
 }
 
 export function goalScheme(goal: Goal, experience: Experience): GoalScheme {
@@ -27,6 +52,7 @@ export function goalScheme(goal: Goal, experience: Experience): GoalScheme {
         restIsolation: 90,
         setsCompound: experience === 'beginner' ? 3 : 4,
         setsIsolation: 3,
+        heavyRestBonus: 30,
       };
     case 'hypertrophy':
       return {
@@ -37,6 +63,7 @@ export function goalScheme(goal: Goal, experience: Experience): GoalScheme {
         restIsolation: 75,
         setsCompound: 3,
         setsIsolation: 3,
+        heavyRestBonus: 30,
       };
     case 'general':
       return {
@@ -47,6 +74,7 @@ export function goalScheme(goal: Goal, experience: Experience): GoalScheme {
         restIsolation: 60,
         setsCompound: 3,
         setsIsolation: 2,
+        heavyRestBonus: 30,
       };
     case 'endurance':
       return {
@@ -57,6 +85,7 @@ export function goalScheme(goal: Goal, experience: Experience): GoalScheme {
         restIsolation: 45,
         setsCompound: 3,
         setsIsolation: 2,
+        heavyRestBonus: 30,
       };
   }
 }
@@ -95,7 +124,7 @@ export interface ProgressionInput {
   exercise: Exercise;
   /** Working sets previously performed for this exercise (any order). */
   history: PerformedSet[];
-  profile: Pick<Profile, 'goal' | 'experience' | 'units' | 'bodyweightKg'>;
+  profile: Pick<Profile, 'goal' | 'experience' | 'units' | 'bodyweightKg' | 'style'>;
   sets: number;
   now: number;
   /** History of swap-compatible exercises, used to seed a first session. */
@@ -137,6 +166,8 @@ const EXPERIENCE_SEED: Record<Experience, number> = { beginner: 0.55, intermedia
 
 /** Reps past the top of the range a lifter builds to when the next load up isn't there yet. */
 const EXTRA_REPS = 5;
+/** A drop set strips about a quarter of the load. */
+export const DROP = 0.75;
 
 /** The next load up. Heavy barbell squats and hinges move two steps at a time. */
 function nextUp(kit: Kit, ex: Exercise, weightKg: number): number | undefined {
@@ -223,12 +254,12 @@ function fitToKit(rx: Prescription, kit: Kit, ex: Exercise, units: Units): Presc
 function prescribeRaw(input: ProgressionInput, kit: Kit): Prescription {
   const { exercise: ex, profile, now } = input;
   const { units } = profile;
-  const scheme = goalScheme(profile.goal, profile.experience);
+  const scheme = schemeFor(profile);
   const range = repRangeFor(ex, scheme);
   const timed = isTimed(ex);
   const rir = timed ? 0 : scheme.rir;
   const restSec =
-    (ex.mechanic === 'compound' ? scheme.restCompound : scheme.restIsolation) + (ex.fatigue === 3 ? 30 : 0);
+    (ex.mechanic === 'compound' ? scheme.restCompound : scheme.restIsolation) + (ex.fatigue === 3 ? scheme.heavyRestBonus : 0);
   const base = { rir, sets: input.sets, repRange: range, restSec, calibrating: false, deload: false };
   const unit = timed ? 's' : ' reps';
 
@@ -441,7 +472,16 @@ export function autoregulate(
   kit: Kit = kitFor(ex, undefined, units),
 ): { sets: SetEntry[]; note?: string } {
   const s = sets[doneIndex];
-  if (!s || s.kind !== 'working' || !s.done || s.reps === undefined || !isWeighted(ex) || isTimed(ex)) return { sets };
+  if (!s || s.kind !== 'working' || s.drop || !s.done || s.reps === undefined || !isWeighted(ex) || isTimed(ex)) return { sets };
+  // The drop set follows whatever the last working set actually used.
+  const dropIdx = sets.findIndex((x, i) => i > doneIndex && x.drop && !x.done && x.weightKg === undefined);
+  const lastWorking = dropIdx > 0 && !sets.some((x, i) => i > doneIndex && i < dropIdx && x.kind === 'working' && !x.done);
+  if (lastWorking) {
+    const used = s.weightKg ?? s.targetWeightKg;
+    let w = kit.snap(used * DROP);
+    if (w >= used - 0.01) w = kit.down(used) ?? w;
+    sets = sets.map((x, i) => (i === dropIdx && w > 0 && w < used ? { ...x, targetWeightKg: w } : x));
+  }
   const used = s.weightKg ?? s.targetWeightKg;
   if (used <= 0) return { sets };
 
@@ -460,7 +500,7 @@ export function autoregulate(
     // Already on the heaviest load here: chase reps instead.
     let bumped = 0;
     const out = sets.map((x, i) => {
-      if (i <= doneIndex || x.kind !== 'working' || x.done || x.weightKg !== undefined) return x;
+      if (i <= doneIndex || x.kind !== 'working' || x.drop || x.done || x.weightKg !== undefined) return x;
       bumped++;
       return { ...x, targetReps: x.targetReps + 2 };
     });
@@ -470,7 +510,7 @@ export function autoregulate(
 
   let changed = 0;
   const out = sets.map((x, i) => {
-    if (i <= doneIndex || x.kind !== 'working' || x.done || x.weightKg !== undefined) return x;
+    if (i <= doneIndex || x.kind !== 'working' || x.drop || x.done || x.weightKg !== undefined) return x;
     changed++;
     return { ...x, targetWeightKg: next };
   });

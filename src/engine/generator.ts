@@ -1,7 +1,7 @@
 import { kitFor, type Kit } from './kit';
 import { warmupSets } from './load';
 import { MUSCLES, PRIORITY_MUSCLES, weeklySetTarget } from './muscles';
-import { goalScheme, prescribe, type Prescription } from './progression';
+import { DROP, prescribe, schemeFor, takesDropSet, type Prescription } from './progression';
 import type {
   DayType,
   Equipment,
@@ -344,6 +344,9 @@ function setTime(restSec: number): number {
   return 40 + restSec;
 }
 
+/** A drop set: change the weight and go, no rest. */
+const DROP_SEC = 45;
+
 export function buildSets(
   ex: Exercise,
   rx: Prescription,
@@ -351,6 +354,7 @@ export function buildSets(
   withWarmup: boolean,
   heavy: boolean,
   kit: Kit = kitFor(ex, undefined, units),
+  drop = false,
 ): SetEntry[] {
   const sets: SetEntry[] = [];
   if (withWarmup && ex.mechanic === 'compound') {
@@ -368,6 +372,12 @@ export function buildSets(
       done: false,
     });
   }
+  // Straight after the last set: strip about a quarter of the load and go close to failure.
+  if (drop && rx.weightKg > 0) {
+    let w = kit.snap(rx.weightKg * DROP);
+    if (w >= rx.weightKg - 0.01) w = kit.down(rx.weightKg) ?? 0;
+    if (w > 0) sets.push({ id: uid(), kind: 'working', drop: true, targetWeightKg: w, targetReps: rx.reps, targetRir: 0, done: false });
+  }
   return sets;
 }
 
@@ -379,15 +389,17 @@ export function planExercise(
   withWarmup: boolean,
 ): WorkoutExercise {
   const kit = kitFor(ex, input.weights, input.profile.units);
+  const drop = takesDropSet(ex, input.profile.style?.dropSets);
   const byId = new Map(input.exercises.map((e) => [e.id, e]));
   const related = (ex.aliases ?? [])
     .map((id) => byId.get(id))
     .filter((e): e is Exercise => !!e)
-    .map((e) => ({ exercise: e, history: input.history.filter((s) => s.exerciseId === e.id) }))
+    .map((e) => ({ exercise: e, history: input.history.filter((s) => s.exerciseId === e.id && !s.drop) }))
     .filter((r) => r.history.length > 0);
   const rx = prescribe({
     exercise: ex,
-    history: input.history.filter((s) => s.exerciseId === ex.id),
+    // Drop sets are deliberately light; progression reads the working sets.
+    history: input.history.filter((s) => s.exerciseId === ex.id && !s.drop),
     profile: input.profile,
     sets,
     now: input.now,
@@ -397,16 +409,18 @@ export function planExercise(
   return {
     id: uid(),
     exerciseId: ex.id,
-    sets: buildSets(ex, rx, input.profile.units, withWarmup, input.profile.goal === 'strength' && ex.loading === 'barbell', kit),
+    sets: buildSets(ex, rx, input.profile.units, withWarmup, input.profile.goal === 'strength' && ex.loading === 'barbell', kit, drop),
     restSec: rx.restSec,
     repRange: rx.repRange,
-    rationale: rx.rationale,
+    rationale: drop ? `${rx.rationale} Finish with a drop set: about a quarter lighter, straight away, as many good reps as you can.` : rx.rationale,
   };
 }
 
 export function generateWorkout(input: GenerateInput): GeneratedWorkout {
   const { profile } = input;
-  const scheme = goalScheme(profile.goal, profile.experience);
+  const scheme = schemeFor(profile);
+  const warmupLimit = { off: 0, first: 1, main: 2, all: 99 }[profile.style?.warmups ?? 'main'];
+  const dropPolicy = profile.style?.dropSets;
   const minutes = input.minutes ?? profile.sessionMinutes;
   const seed = input.seed ?? hashString(dayKey(input.now));
   const ctx: Ctx = { input, rand: mulberry32(seed), ...recentUsage(input.history, input.now) };
@@ -459,10 +473,10 @@ export function generateWorkout(input: GenerateInput): GeneratedWorkout {
   const maxExercises = Math.min(9, Math.max(3, Math.round(minutes / 8)));
 
   const warmupCost = (ex: Exercise) =>
-    chosen.length < 2 && ex.mechanic === 'compound' && ex.loading !== 'bodyweight' && ex.loading !== 'band' ? 150 : 0;
+    chosen.filter(needsWarmup).length < warmupLimit && needsWarmup(ex) ? 150 : 0;
   const add = (pick: Exercise, sets: number) => {
     const rest = pick.mechanic === 'compound' ? scheme.restCompound : scheme.restIsolation;
-    budgetSec -= sets * setTime(rest) + warmupCost(pick);
+    budgetSec -= sets * setTime(rest) + warmupCost(pick) + (takesDropSet(pick, dropPolicy) ? DROP_SEC : 0);
     chosen.push(pick);
     setsFor.set(pick.id, sets);
     for (const m of pick.primary) {
@@ -609,7 +623,7 @@ export function generateWorkout(input: GenerateInput): GeneratedWorkout {
 
   let warmups = 0;
   const exercises = chosen.map((ex) => {
-    const withWarmup = warmups < 2 && needsWarmup(ex);
+    const withWarmup = warmups < warmupLimit && needsWarmup(ex);
     if (withWarmup) warmups++;
     return planExercise(ex, input, setsFor.get(ex.id)!, withWarmup);
   });
@@ -652,7 +666,7 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
 export function estimateMinutes(exercises: WorkoutExercise[]): number {
   let sec = 5 * 60;
   for (const we of exercises) {
-    for (const s of we.sets) sec += s.kind === 'warmup' ? 60 : setTime(we.restSec);
+    for (const s of we.sets) sec += s.kind === 'warmup' ? 60 : s.drop ? DROP_SEC : setTime(we.restSec);
   }
   return Math.round(sec / 60);
 }

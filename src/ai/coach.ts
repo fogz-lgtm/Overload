@@ -8,7 +8,7 @@ import { kitFor } from '../engine/kit';
 import { trainingDays, trainingDaysText } from '../engine/schedule';
 import { formatWeight } from '../engine/load';
 import { MUSCLES, MUSCLE_IDS, weeklySetTarget } from '../engine/muscles';
-import { bestE1RM, groupSessions } from '../engine/progression';
+import { bestE1RM, groupSessions, schemeFor } from '../engine/progression';
 import { computeRecovery } from '../engine/recovery';
 import type { ActivityKind, Exercise, Intensity, MuscleId, Profile, Workout } from '../engine/types';
 import { uid } from '../engine/util';
@@ -127,6 +127,11 @@ export async function trainingSnapshot(): Promise<string> {
   lines.push(`Now: ${new Date(now).toLocaleString(undefined, { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`);
   lines.push(
     `Lifter: ${profile.name || 'unnamed'}; goal ${profile.goal}; ${profile.experience}; trains ${profile.daysPerWeek}×/week (${trainingDaysText(trainingDays(profile))}), ${profile.sessionMinutes} min sessions; bodyweight ${formatWeight(profile.bodyweightKg, u)}; units ${u}.`,
+  );
+  const sch = schemeFor(profile);
+  const st = profile.style;
+  lines.push(
+    `Workout style: rest ${sch.restCompound}s compound / ${sch.restIsolation}s isolation${st?.restCompoundSec || st?.restIsolationSec ? ' (their choice)' : ' (goal default)'}; aim for ${sch.rir} reps in reserve; warm-ups ${st?.warmups ?? 'main lifts'}; drop sets ${st?.dropSets ?? 'off'}. Workouts you build follow these.`,
   );
   const days = splitDays(profile);
   const order = splitOrder(profile);

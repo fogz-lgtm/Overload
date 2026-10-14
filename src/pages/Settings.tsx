@@ -12,7 +12,8 @@ import { refreshPlan, saveSplit, saveTrainingDays } from '../db/repo';
 import { splitDays, splitName } from '../engine/generator';
 import { trainingDays, trainingDaysText, WEEKDAY_SHORT } from '../engine/schedule';
 import { formatWeight, formatWeightWhole, fromDisplay } from '../engine/load';
-import type { Equipment, Experience, Goal, Gym, GymWeights, Profile, Sex, Split, Units } from '../engine/types';
+import { goalScheme } from '../engine/progression';
+import type { DropSetPolicy, Equipment, Experience, Goal, Gym, GymWeights, Profile, Sex, Split, TrainingStyle, Units, WarmupPolicy } from '../engine/types';
 import { dayKey, uid } from '../engine/util';
 import { download, formatDate, useProfile } from '../hooks';
 import { getTheme, setTheme, type ThemePref } from '../theme';
@@ -34,6 +35,25 @@ const GOALS: Option<Goal>[] = [
   { value: 'general', title: 'General fitness', body: 'Balanced, efficient sessions that fit around life.' },
   { value: 'endurance', title: 'Muscular endurance', body: 'Higher reps and short rest. Pairs well with running or sport.' },
 ];
+
+const WARMUPS: Option<WarmupPolicy>[] = [
+  { value: 'main', title: 'Main lifts', body: 'Ramp-up sets before the first two heavy lifts, where they matter most.' },
+  { value: 'first', title: 'First lift only', body: 'Ramp up once, on the first heavy lift of the session.' },
+  { value: 'all', title: 'Every compound lift', body: 'Ramp up before every big lift. Adds a few minutes.' },
+  { value: 'off', title: 'Off', body: 'Straight into working sets, for when you warm up your own way.' },
+];
+
+const DROPS: Option<DropSetPolicy>[] = [
+  { value: 'off', title: 'Off', body: 'Straight sets only.' },
+  { value: 'isolation', title: 'Isolation lifts', body: 'After the last set of curls, raises, flyes and extensions: strip about a quarter of the weight and keep going.' },
+  { value: 'most', title: 'Isolation and machines', body: 'Also on machine, cable and dumbbell presses and rows. Never on barbell lifts.' },
+];
+
+const REST_COMPOUND = [60, 90, 120, 150, 180, 240];
+const REST_ISOLATION = [45, 60, 75, 90, 120];
+
+/** 1:30, 2:00. */
+const clock = (sec: number) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
 
 const EXPERIENCE: Option<Experience>[] = [
   { value: 'beginner', title: 'Beginner', body: 'Under a year of consistent training.' },
@@ -82,6 +102,16 @@ function splitText(days: number, split: Split | undefined): string {
   if (days <= 3) return 'Full-body sessions.';
   if (days === 4) return 'An upper / lower split.';
   return 'A push / pull / legs rotation.';
+}
+
+/** Merges into the lifter's workout style; unset fields fall back to the goal's defaults. */
+async function saveStyle(current: TrainingStyle | undefined, patch: Partial<TrainingStyle>, message: string, rebuild = true): Promise<void> {
+  const next: Record<string, unknown> = { ...current, ...patch };
+  for (const k of Object.keys(next)) if (next[k] === undefined) delete next[k];
+  await db.profile.update('me', { style: Object.keys(next).length ? (next as TrainingStyle) : undefined });
+  haptics.tap();
+  toast(message, { icon: 'check', tone: 'accent' });
+  if (rebuild) void refreshPlan();
 }
 
 async function saveProfile(patch: Partial<Profile>, message: string): Promise<void> {
@@ -258,7 +288,7 @@ function InlineError({ text }: { text: string | null }) {
 
 // ── Page ───────────────────────────────────────────────────────────────────
 
-type Panel = 'profile' | 'goal' | 'experience' | 'days' | 'split' | 'length' | 'units' | 'ai' | 'fresh';
+type Panel = 'profile' | 'goal' | 'experience' | 'days' | 'split' | 'length' | 'units' | 'rest' | 'warmups' | 'drops' | 'effort' | 'ai' | 'fresh';
 
 export function Settings() {
   const profile = useProfile();
@@ -268,6 +298,7 @@ export function Settings() {
   if (!profile) return null;
 
   const initial = profile.name.trim().charAt(0).toUpperCase();
+  const style = schemeForSettings(profile);
   const connected = !!profile.ai?.apiKey;
 
   return (
@@ -333,6 +364,36 @@ export function Settings() {
           <Row icon="clock" label="Session length" value={<span className="num">{profile.sessionMinutes} min</span>} onClick={() => setPanel('length')} />
           <Row icon="scale" label="Units" value={profile.units === 'kg' ? 'Kilograms' : 'Pounds'} onClick={() => setPanel('units')} />
         </div>
+      </Section>
+
+      <Section title="Workout style">
+        <div className="group">
+          <Row
+            icon="timer"
+            label="Rest between sets"
+            sub={profile.style?.restCompoundSec === undefined && profile.style?.restIsolationSec === undefined ? 'Auto for your goal' : 'Your own times'}
+            value={<span className="num">{`${clock(style.restCompound)} · ${clock(style.restIsolation)}`}</span>}
+            onClick={() => setPanel('rest')}
+          />
+          <Row icon="flame" label="Warm-up sets" value={titleOf(WARMUPS, profile.style?.warmups ?? 'main')} onClick={() => setPanel('warmups')} />
+          <Row icon="layers" label="Drop sets" value={profile.style?.dropSets && profile.style.dropSets !== 'off' ? titleOf(DROPS, profile.style.dropSets) : 'Off'} onClick={() => setPanel('drops')} />
+          <Row icon="bolt" label="Effort" sub={`${style.rir} ${style.rir === 1 ? 'rep' : 'reps'} in reserve`} value={EFFORT_LABEL[String(profile.style?.effort ?? 0)]} onClick={() => setPanel('effort')} />
+          <label className="group-row set-row toggle set-toggle-row">
+            <span className="row-icon">
+              <Icon name="play" size={17} />
+            </span>
+            <span className="set-row-text">
+              <span className="set-row-label">Rest timer starts itself</span>
+              <span className="set-row-sub">When you tick off a set</span>
+            </span>
+            <input
+              type="checkbox"
+              checked={profile.style?.autoRest !== false}
+              onChange={(e) => void saveStyle(profile.style, { autoRest: e.target.checked ? undefined : false }, e.target.checked ? 'Rest timer starts itself' : 'Rest timer off — start it from the set', false)}
+            />
+          </label>
+        </div>
+        <p className="set-footnote small">Today's plan is rebuilt to match. You can still change any set or rest during a workout.</p>
       </Section>
 
       <GymsSection activeGymId={profile.activeGymId} units={profile.units} />
@@ -413,6 +474,44 @@ export function Settings() {
         />
       )}
       {panel === 'length' && <LengthSheet minutes={profile.sessionMinutes} onClose={close} />}
+      {panel === 'rest' && <RestSheet profile={profile} onClose={close} />}
+      {panel === 'warmups' && (
+        <Sheet open onClose={close} title="Warm-up sets" subtitle="Lighter ramp-up sets before heavy lifts. They don't count toward your volume.">
+          <OptionCards
+            options={WARMUPS}
+            value={profile.style?.warmups ?? 'main'}
+            onPick={(warmups) => {
+              void saveStyle(profile.style, { warmups: warmups === 'main' ? undefined : warmups }, `Warm-ups: ${titleOf(WARMUPS, warmups).toLowerCase()}`);
+              dismissSheet(260);
+            }}
+          />
+        </Sheet>
+      )}
+      {panel === 'drops' && (
+        <Sheet open onClose={close} title="Drop sets" subtitle="A lighter set straight after the last one, taken close to failure. More work in less time.">
+          <OptionCards
+            options={DROPS}
+            value={profile.style?.dropSets ?? 'off'}
+            onPick={(dropSets) => {
+              void saveStyle(profile.style, { dropSets: dropSets === 'off' ? undefined : dropSets }, dropSets === 'off' ? 'Drop sets off' : `Drop sets on ${titleOf(DROPS, dropSets).toLowerCase()}`);
+              dismissSheet(260);
+            }}
+          />
+        </Sheet>
+      )}
+      {panel === 'effort' && (
+        <Sheet open onClose={close} title="Effort" subtitle="How close to failure your working sets go. Reps in reserve = reps you could still have done.">
+          <OptionCards
+            options={effortOptions(profile)}
+            value={String(profile.style?.effort ?? 0)}
+            onPick={(v) => {
+              const effort = Number(v) as -1 | 0 | 1;
+              void saveStyle(profile.style, { effort: effort === 0 ? undefined : effort }, `Effort: ${EFFORT_LABEL[v]!.toLowerCase()}`);
+              dismissSheet(260);
+            }}
+          />
+        </Sheet>
+      )}
       {panel === 'units' && (
         <Sheet open onClose={close} title="Units" subtitle="Everything is stored precisely, so switching never loses data.">
           <OptionCards
@@ -554,6 +653,65 @@ function DaysSheet({ days, split, onClose }: { days: number[]; split: Split | un
         <p className="muted center set-days-note" key={shown.join()}>
           <strong style={{ color: 'var(--text-1)' }}>{shown.length} days a week.</strong> {splitText(shown.length, split)}
         </p>
+      </div>
+    </Sheet>
+  );
+}
+
+const EFFORT_LABEL: Record<string, string> = { '1': 'Easier', '0': 'Standard', '-1': 'Harder' };
+
+function schemeForSettings(profile: Profile) {
+  const base = goalScheme(profile.goal, profile.experience);
+  return {
+    rir: Math.max(0, base.rir + (profile.style?.effort ?? 0)),
+    restCompound: profile.style?.restCompoundSec ?? base.restCompound,
+    restIsolation: profile.style?.restIsolationSec ?? base.restIsolation,
+  };
+}
+
+function effortOptions(profile: Profile): Option<string>[] {
+  const rir = goalScheme(profile.goal, profile.experience).rir;
+  const reps = (n: number) => `${n} ${n === 1 ? 'rep' : 'reps'}`;
+  return [
+    { value: '1', title: 'Easier', body: `Stop about ${reps(rir + 1)} short of failure. Less fatigue, steadier technique.` },
+    { value: '0', title: 'Standard', body: `About ${reps(rir)} in reserve: the sweet spot for your goal and experience.` },
+    {
+      value: '-1',
+      title: 'Harder',
+      body: rir - 1 <= 0 ? 'Working sets go to failure. Most stimulus per set, most fatigue.' : `About ${reps(rir - 1)} in reserve. More from each set, more fatigue.`,
+    },
+  ];
+}
+
+function RestSheet({ profile, onClose }: { profile: Profile; onClose: () => void }) {
+  const base = goalScheme(profile.goal, profile.experience);
+  const compound = profile.style?.restCompoundSec;
+  const isolation = profile.style?.restIsolationSec;
+  const pick = (patch: Partial<TrainingStyle>, label: string) => void saveStyle(profile.style, patch, label);
+  const block = (title: string, hint: string, value: number | undefined, auto: number, options: number[], key: 'restCompoundSec' | 'restIsolationSec') => (
+    <div className="field">
+      <span className="set-field-head">
+        {title}
+        <span className="faint">{hint}</span>
+      </span>
+      <div className="chips wrap" role="group" aria-label={`${title} rest`}>
+        <button type="button" className="chip" aria-pressed={value === undefined} onClick={() => pick({ [key]: undefined }, `${title}: auto rest (${clock(auto)})`)}>
+          Auto · <span className="num">{clock(auto)}</span>
+        </button>
+        {options.map((sec) => (
+          <button key={sec} type="button" className="chip num" aria-pressed={value === sec} onClick={() => pick({ [key]: sec }, `${title}: ${clock(sec)} rest`)}>
+            {clock(sec)}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+  return (
+    <Sheet open onClose={onClose} title="Rest between sets" subtitle="What the timer counts down after each set. Auto follows your goal.">
+      <div className="stack lg">
+        {block('Compound lifts', 'Squats, presses, rows', compound, base.restCompound, REST_COMPOUND, 'restCompoundSec')}
+        {block('Isolation lifts', 'Curls, raises, flyes', isolation, base.restIsolation, REST_ISOLATION, 'restIsolationSec')}
+        <p className="small faint">Longer rests let you lift more on the next set, which is usually worth the time. Session plans are built around these, so shorter rests fit more into the same session.</p>
       </div>
     </Sheet>
   );

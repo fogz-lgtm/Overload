@@ -179,6 +179,10 @@
   color: var(--warning);
   font-size: 16px;
 }
+.lg-row.drop .lg-idx {
+  color: var(--tag-push);
+  font-size: 16px;
+}
 .lg-row.done .lg-idx {
   color: var(--accent);
   cursor: default;

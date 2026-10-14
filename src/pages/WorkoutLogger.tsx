@@ -152,12 +152,21 @@ export function WorkoutLogger() {
     const nextSet = nextInEx ?? nextEx!.sets.find((x) => !x.done)!;
     const nextName = nextInEx ? undefined : ex!.byId[nextEx!.exerciseId]?.name;
     const load = nextSet.targetWeightKg > 0 ? `${formatWeight(nextSet.targetWeightKg, units)} × ` : '';
+    if (nextInEx?.drop) {
+      // Strip the weight and go: just long enough to change it.
+      setRest({ endsAt: Date.now() + 10_000, total: 10, next: `Drop set · ${load}as many as you can` });
+      return;
+    }
+    if (profile?.style?.autoRest === false) {
+      setRest(null);
+      return;
+    }
     const secs = s.kind === 'warmup' ? 60 : we.restSec;
     setRest({ endsAt: Date.now() + secs * 1000, total: secs, next: `${nextName ? `${nextName} · ` : ''}${load}${nextSet.targetReps}` });
   }
 
   function addSet(we: WorkoutExercise) {
-    const last = [...we.sets].reverse().find((s) => s.kind === 'working') ?? we.sets.at(-1);
+    const last = [...we.sets].reverse().find((s) => s.kind === 'working' && !s.drop) ?? we.sets.at(-1);
     const fresh: SetEntry = {
       id: uid(),
       kind: 'working',
@@ -166,7 +175,10 @@ export function WorkoutLogger() {
       targetRir: last?.targetRir ?? 2,
       done: false,
     };
-    update((cur) => ({ ...cur, exercises: cur.exercises.map((e) => (e.id === we.id ? { ...e, sets: [...e.sets, fresh] } : e)) }));
+    // A drop set stays last.
+    const at = we.sets.findIndex((s) => s.drop && !s.done);
+    const sets = at >= 0 ? [...we.sets.slice(0, at), fresh, ...we.sets.slice(at)] : [...we.sets, fresh];
+    update((cur) => ({ ...cur, exercises: cur.exercises.map((e) => (e.id === we.id ? { ...e, sets } : e)) }));
   }
 
   function removeSet(we: WorkoutExercise, setId: string) {
@@ -437,12 +449,13 @@ function ExerciseCard({
   const kit = exercise ? kitFor(exercise, weights, units) : undefined;
   const timed = exercise ? isTimed(exercise) : false;
   const bodyweight = exercise?.loading === 'bodyweight' || exercise?.loading === 'band';
-  const working = we.sets.filter((s) => s.kind === 'working');
+  const working = we.sets.filter((s) => s.kind === 'working' && !s.drop);
+  const hasDrop = we.sets.some((s) => s.drop);
   const complete = we.sets.length > 0 && we.sets.every((s) => s.done);
   const firstOpen = we.sets.findIndex((s) => !s.done);
   const next = we.sets.find((s) => !s.done && s.kind === 'working');
   const top = working[0];
-  const target = top ? `${working.length} × ${top.targetReps}${timed ? 's' : ''}${top.targetWeightKg > 0 ? ` · ${formatWeight(top.targetWeightKg, units)}` : ''}` : '';
+  const target = top ? `${working.length} × ${top.targetReps}${timed ? 's' : ''}${top.targetWeightKg > 0 ? ` · ${formatWeight(top.targetWeightKg, units)}` : ''}${hasDrop ? ' + drop' : ''}` : '';
   const best = working.filter((s) => s.done).sort((a, b) => (b.weightKg ?? 0) * (b.reps ?? 0) - (a.weightKg ?? 0) * (a.reps ?? 0))[0];
   let workingIdx = 0;
 
@@ -520,13 +533,13 @@ function ExerciseCard({
               <span />
             </div>
             {we.sets.map((s, i) => {
-              const label = s.kind === 'warmup' ? 'W' : String(++workingIdx);
+              const label = s.kind === 'warmup' ? 'W' : s.drop ? 'D' : String(++workingIdx);
               return (
-                <div key={s.id} className={`lg-row ${s.kind}${s.done ? ' done' : ''}${i === firstOpen && current ? ' now' : ''}`}>
+                <div key={s.id} className={`lg-row ${s.kind}${s.drop ? ' drop' : ''}${s.done ? ' done' : ''}${i === firstOpen && current ? ' now' : ''}`}>
                   <button
                     type="button"
                     className="lg-idx"
-                    aria-label={s.done ? `Set ${label}` : `Remove set ${label}`}
+                    aria-label={s.drop ? (s.done ? 'Drop set' : 'Remove drop set') : s.done ? `Set ${label}` : `Remove set ${label}`}
                     onClick={async () => !s.done && (await ask({ title: `Remove set ${label}?`, confirm: 'Remove', tone: 'danger' })) && onRemoveSet(s.id)}
                   >
                     {label}

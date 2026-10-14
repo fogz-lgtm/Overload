@@ -18,6 +18,7 @@ export function flattenSets(workouts: Workout[]): PerformedSet[] {
           kind: s.kind,
           targetReps: s.targetReps,
           repRange: we.repRange,
+          ...(s.drop && { drop: true }),
         });
       }
     }

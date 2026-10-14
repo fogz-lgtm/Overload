@@ -129,7 +129,27 @@ export interface Profile {
   split?: Split;
   /** Weekdays the lifter trains, 0 = Monday … 6 = Sunday. When absent they're spread across the week. */
   trainingDays?: number[];
+  /** How sessions are run; anything unset follows the goal's defaults. */
+  style?: TrainingStyle;
   ai?: { apiKey: string; model: string };
+}
+
+/** Warm-up sets: none, before the first lift, before the main (up to two) heavy lifts, or before every compound. */
+export type WarmupPolicy = 'off' | 'first' | 'main' | 'all';
+/** Drop sets after the last working set: never, on isolation lifts, or on everything but barbell lifts. */
+export type DropSetPolicy = 'off' | 'isolation' | 'most';
+
+export interface TrainingStyle {
+  /** Rest after a set of a compound lift, in seconds. */
+  restCompoundSec?: number;
+  /** Rest after a set of an isolation lift, in seconds. */
+  restIsolationSec?: number;
+  warmups?: WarmupPolicy;
+  dropSets?: DropSetPolicy;
+  /** Reps in reserve relative to the goal: -1 trains a rep closer to failure, +1 a rep further. */
+  effort?: -1 | 0 | 1;
+  /** Start the rest timer when a set is ticked off (default on). */
+  autoRest?: boolean;
 }
 
 /** How many pairs of one plate size a gym has. */
@@ -179,6 +199,8 @@ export interface SetEntry {
   rir?: number;
   done: boolean;
   completedAt?: number;
+  /** A lighter set taken straight after the last working set, close to failure. */
+  drop?: boolean;
 }
 
 export interface WorkoutExercise {
@@ -242,6 +264,7 @@ export interface PerformedSet {
   kind: SetKind;
   targetReps?: number;
   repRange?: [number, number];
+  drop?: boolean;
 }
 
 /** Recovery state per muscle: 0 = fully fatigued, 1 = fully fresh. */

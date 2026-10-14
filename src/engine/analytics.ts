@@ -137,8 +137,9 @@ export function detectPRs(current: PerformedSet[], prior: PerformedSet[]): PR[] 
   const prs: PR[] = [];
   const ids = [...new Set(current.filter((s) => s.kind === 'working').map((s) => s.exerciseId))];
   for (const id of ids) {
-    const now = current.filter((s) => s.exerciseId === id && s.kind === 'working' && s.reps > 0);
-    const before = prior.filter((s) => s.exerciseId === id && s.kind === 'working' && s.reps > 0);
+    // Drop sets are light on purpose; a "rep record" at a drop weight is noise.
+    const now = current.filter((s) => s.exerciseId === id && s.kind === 'working' && s.reps > 0 && !s.drop);
+    const before = prior.filter((s) => s.exerciseId === id && s.kind === 'working' && s.reps > 0 && !s.drop);
     if (!before.length || !now.length) continue;
 
     const e1Now = Math.max(...now.map((s) => estimate1RM(s.weightKg, s.reps)));
