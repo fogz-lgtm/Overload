@@ -350,3 +350,10 @@ select.lg-rir.unset {
   border-color: transparent;
   color: var(--text-1);
 }
+
+.lg-demo {
+  align-self: flex-start;
+}
+.lg-demo svg {
+  fill: currentColor;
+}

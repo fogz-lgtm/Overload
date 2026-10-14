@@ -1,0 +1,118 @@
+/* 16:9 player that starts life as a tappable poster. */
+.xv {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 50% 110%, var(--accent-soft), transparent 60%),
+    var(--surface-2);
+  border: 1px solid var(--line);
+}
+.xv iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.xv img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.xv-poster {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.xv-poster::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.62), transparent 55%), rgba(0, 0, 0, 0.12);
+  transition: background var(--d2);
+}
+.xv-poster:disabled {
+  cursor: default;
+}
+.xv-poster:disabled img {
+  filter: grayscale(1);
+  opacity: 0.5;
+}
+.xv-poster:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -4px;
+}
+.xv-play {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 50%;
+  width: 58px;
+  height: 58px;
+  margin: -29px 0 0 -29px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-left: 3px;
+  color: var(--accent-ink);
+  background: linear-gradient(180deg, var(--accent-fill), var(--accent-fill-2));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 8px 24px rgba(0, 0, 0, 0.45);
+  transition: transform var(--d2) var(--spring);
+}
+.xv-play svg {
+  fill: currentColor;
+}
+.xv-poster:active .xv-play {
+  transform: scale(0.92);
+}
+@media (hover: hover) {
+  .xv-poster:not(:disabled):hover .xv-play {
+    transform: scale(1.06);
+  }
+}
+.xv-poster:disabled .xv-play {
+  background: var(--surface-3);
+  color: var(--text-3);
+  box-shadow: none;
+}
+.xv-caption {
+  position: absolute;
+  z-index: 1;
+  left: 14px;
+  bottom: 11px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #fff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+}
+.xv-preview {
+  max-width: 240px;
+}
+.xv-error {
+  color: var(--danger);
+}
+.xv-cues {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: 14.5px;
+  line-height: 1.45;
+}
+.xv-cues li::marker {
+  color: var(--text-3);
+  font-weight: 650;
+}

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { MuscleThumb } from '../components/BodyMap';
 import { AddExerciseSheet, SwapSheet } from '../components/ExerciseSheets';
+import { useExerciseVideo, VideoSheet } from '../components/ExerciseVideo';
 import { Icon } from '../components/Icon';
 import { NumField } from '../components/NumField';
 import { Sheet } from '../components/Sheet';
@@ -42,6 +43,7 @@ export function WorkoutLogger() {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [menuFor, setMenuFor] = useState<WorkoutExercise | null>(null);
+  const [demoFor, setDemoFor] = useState<Exercise | null>(null);
   const [swapFor, setSwapFor] = useState<WorkoutExercise | null>(null);
   const [adding, setAdding] = useState(false);
   const [summary, setSummary] = useState<{ prs: PR[]; workout: Workout } | null>(null);
@@ -253,6 +255,7 @@ export function WorkoutLogger() {
               onAddSet={() => addSet(we)}
               onRemoveSet={(setId) => removeSet(we, setId)}
               onMenu={() => setMenuFor(we)}
+              onDemo={() => exercise && setDemoFor(exercise)}
             />
           );
         })}
@@ -288,6 +291,8 @@ export function WorkoutLogger() {
 
       {rest && <RestTimer rest={rest} now={now} onAdjust={(d) => setRest({ ...rest, endsAt: Math.max(Date.now() + 1000, rest.endsAt + d * 1000), total: Math.max(5, rest.total + d) })} onSkip={() => setRest(null)} />}
 
+      {demoFor && <VideoSheet exercise={demoFor} onClose={() => setDemoFor(null)} />}
+
       <Sheet open={!!menuFor} onClose={() => setMenuFor(null)} title={menuFor ? ex.byId[menuFor.exerciseId]?.name : ''}>
         {menuFor && (
           <div className="group">
@@ -298,6 +303,15 @@ export function WorkoutLogger() {
               <span className="grow">Swap exercise</span>
               <Icon name="chevron" size={16} />
             </button>
+            {ex.byId[menuFor.exerciseId] && (
+              <button type="button" className="group-row" onClick={() => (setDemoFor(ex.byId[menuFor.exerciseId]!), setMenuFor(null))}>
+                <span className="row-icon">
+                  <Icon name="play" size={17} />
+                </span>
+                <span className="grow">Watch form demo</span>
+                <Icon name="chevron" size={16} />
+              </button>
+            )}
             <Link to={`/library/${menuFor.exerciseId}`} className="group-row">
               <span className="row-icon">
                 <Icon name="progress" size={17} />
@@ -394,6 +408,7 @@ function ExerciseCard({
   onAddSet,
   onRemoveSet,
   onMenu,
+  onDemo,
 }: {
   we: WorkoutExercise;
   index: number;
@@ -410,8 +425,10 @@ function ExerciseCard({
   onAddSet: () => void;
   onRemoveSet: (setId: string) => void;
   onMenu: () => void;
+  onDemo: () => void;
 }) {
   const [why, setWhy] = useState(false);
+  const video = useExerciseVideo(we.exerciseId);
   const timed = exercise ? isTimed(exercise) : false;
   const bodyweight = exercise?.loading === 'bodyweight' || exercise?.loading === 'band';
   const working = we.sets.filter((s) => s.kind === 'working');
@@ -468,6 +485,11 @@ function ExerciseCard({
                   ))}
                 </ul>
               ) : null}
+              {video?.id && (
+                <button type="button" className="btn sm lg-demo" onClick={onDemo}>
+                  <Icon name="play" size={14} /> Watch form demo
+                </button>
+              )}
             </div>
           )}
 

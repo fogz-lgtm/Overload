@@ -318,3 +318,31 @@
     animation-delay: 0s !important;
   }
 }
+
+/* How to do it: video, then cues */
+.exd-howto {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.exd-howto .card-title {
+  margin-bottom: 0;
+}
+.exd-video-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: -2px;
+}
+.exd-howto .exd-cues {
+  margin-top: 6px;
+}
+.exd-novideo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border-radius: var(--r-md);
+  border: 1px dashed var(--line-strong);
+  color: var(--text-3);
+}

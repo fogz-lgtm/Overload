@@ -5,6 +5,7 @@ import { BodyMap, Figure, MuscleThumb, targetFill } from '../components/BodyMap'
 import { SwapSheet } from '../components/ExerciseSheets';
 import { Icon, type IconName } from '../components/Icon';
 import { Sheet } from '../components/Sheet';
+import { ExerciseVideo } from '../components/ExerciseVideo';
 import { DayPills, SplitSheet } from '../components/SplitSheet';
 import { db } from '../db/db';
 import { eraseAll } from '../db/demo';
@@ -453,6 +454,7 @@ function ExercisePreview({
     <Sheet open={!!we} onClose={onClose} title={exercise?.name} subtitle={exercise?.primary.map((m) => MUSCLES[m].name).join(' · ')}>
       {we && exercise && (
         <div className="stack lg">
+          <ExerciseVideo exercise={exercise} />
           <div className="today-figures">
             <Figure view="front" fill={(m) => targetFill(m, exercise.primary, exercise.secondary)} label="Front view" />
             <Figure view="back" fill={(m) => targetFill(m, exercise.primary, exercise.secondary)} label="Back view" />

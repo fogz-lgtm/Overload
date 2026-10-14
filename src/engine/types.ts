@@ -200,6 +200,8 @@ export interface ExercisePref {
   exerciseId: string;
   favorite?: boolean;
   excluded?: boolean;
+  /** YouTube id of the lifter's own form video, replacing the built-in one. */
+  video?: string;
 }
 
 /** One performed working set, flattened for analysis. */

@@ -2,6 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Figure, targetFill } from '../components/BodyMap';
+import { ExerciseVideo, VideoLinkSheet } from '../components/ExerciseVideo';
 import { Icon, type IconName } from '../components/Icon';
 import { LineChart } from '../components/LineChart';
 import { Sheet } from '../components/Sheet';
@@ -11,6 +12,7 @@ import { exerciseTrend } from '../engine/analytics';
 import { estimate1RM, formatWeight, formatWeightWhole, toDisplay } from '../engine/load';
 import { MUSCLES } from '../engine/muscles';
 import { bestE1RM, groupSessions, isTimed } from '../engine/progression';
+import { videoFor, videoSearch } from '../engine/videos';
 import type { ExercisePref, Loading, MuscleId, PerformedSet, Units } from '../engine/types';
 import { formatDate, useExercises, useProfile, useTrainingState } from '../hooks';
 import { CountUp } from '../ui/CountUp';
@@ -109,6 +111,7 @@ export function ExerciseDetail() {
   const pref = useLiveQuery(async () => (await db.prefs.get(id)) ?? null, [id]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [allSessions, setAllSessions] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
 
   if (!exercises || !profile || !state || pref === undefined) return null;
 
@@ -218,6 +221,7 @@ export function ExerciseDetail() {
 
   const favorite = !!pref?.favorite;
   const excluded = !!pref?.excluded;
+  const video = videoFor(ex.id, pref);
   const updatePref = (patch: Partial<ExercisePref>, message: string, icon: IconName, accent = false) => {
     haptics.tap();
     void setPref(id, patch).then(() => toast(message, { icon, tone: accent ? 'accent' : 'default' }));
@@ -291,6 +295,42 @@ export function ExerciseDetail() {
             </div>
           )}
         </dl>
+      </section>
+
+      <section className="card exd-howto" aria-labelledby="exd-howto-title">
+        <div className="card-title exd-card-title">
+          <h2 id="exd-howto-title">How to do it</h2>
+        </div>
+        {video ? (
+          <ExerciseVideo exercise={ex} />
+        ) : (
+          <div className="exd-novideo">
+            <Icon name="play" size={20} />
+            <p className="small muted">No form video yet. Paste a YouTube link to keep one here.</p>
+          </div>
+        )}
+        <div className="exd-video-actions">
+          <button type="button" className="btn sm" onClick={() => setLinkOpen(true)}>
+            <Icon name={video ? 'swap' : 'plus'} size={15} />
+            {pref?.video ? 'Change video' : video ? 'Swap video' : 'Add a video'}
+          </button>
+          <a className="btn sm ghost" href={videoSearch(ex.name)} target="_blank" rel="noreferrer">
+            More on YouTube
+            <Icon name="external" size={14} />
+          </a>
+        </div>
+        {ex.cues.length > 0 && (
+          <ol className="exd-cues">
+            {ex.cues.map((c, i) => (
+              <li key={c}>
+                <span className="display exd-cue-n" aria-hidden="true">
+                  {i + 1}
+                </span>
+                <span>{c}</span>
+              </li>
+            ))}
+          </ol>
+        )}
       </section>
 
       {hasHistory && bestSet ? (
@@ -429,24 +469,6 @@ export function ExerciseDetail() {
         </div>
       )}
 
-      {ex.cues.length > 0 && (
-        <section className="card" aria-labelledby="exd-cues-title">
-          <div className="card-title exd-card-title">
-            <h2 id="exd-cues-title">Technique</h2>
-          </div>
-          <ol className="exd-cues">
-            {ex.cues.map((c, i) => (
-              <li key={c}>
-                <span className="display exd-cue-n" aria-hidden="true">
-                  {i + 1}
-                </span>
-                <span>{c}</span>
-              </li>
-            ))}
-          </ol>
-        </section>
-      )}
-
       <section className="stack exd-section" aria-labelledby="exd-prefs-title">
         <h2 id="exd-prefs-title" className="section-title">
           Preferences
@@ -502,6 +524,8 @@ export function ExerciseDetail() {
           Delete exercise
         </button>
       )}
+
+      {linkOpen && <VideoLinkSheet exercise={ex} current={pref?.video} onClose={() => setLinkOpen(false)} />}
 
       <Sheet open={confirmDelete} onClose={() => setConfirmDelete(false)} title="Delete exercise?" subtitle={ex.name}>
         <div className="stack lg">
