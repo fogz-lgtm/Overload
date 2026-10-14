@@ -1,7 +1,6 @@
 /* ── Onboarding ─────────────────────────────────────────────────────────── */
 .ob {
   gap: 20px;
-  overflow-x: clip;
 }
 
 /* Top bar: back + segmented progress */
@@ -573,6 +572,11 @@
 }
 .ob-foot > * {
   pointer-events: auto;
+}
+@media (max-height: 500px) {
+  .ob-foot {
+    position: static;
+  }
 }
 .ob-foot {
   animation: ob-rise 600ms var(--ease) 480ms backwards;

@@ -366,7 +366,7 @@ function PlanCard({
                 <span className="today-ex-idx display">{i + 1}</span>
                 {e && <MuscleThumb primary={e.primary} secondary={e.secondary} size={42} />}
                 <span className="grow" style={{ minWidth: 0 }}>
-                  <span className="today-ex-name truncate">{e?.name ?? we.exerciseId}</span>
+                  <span className="today-ex-name">{e?.name ?? we.exerciseId}</span>
                   <span className="small faint truncate" style={{ display: 'block' }}>
                     {we.sets.some((s) => s.kind === 'warmup') ? 'Warm-up included · ' : ''}
                     {e?.primary.map((m) => MUSCLES[m].name).join(', ')}

@@ -144,6 +144,9 @@
 *::after {
   box-sizing: border-box;
 }
+html {
+  overflow-x: clip;
+}
 html,
 body {
   margin: 0;
@@ -1355,7 +1358,7 @@ input[type='range']::-moz-range-thumb {
 /* ── Week strip ─────────────────────────────────────────────────────────── */
 .week-strip {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 4px;
 }
 .wday {
@@ -1371,8 +1374,9 @@ input[type='range']::-moz-range-thumb {
   letter-spacing: 0.04em;
 }
 .wday-dot {
-  width: 36px;
-  height: 36px;
+  /* Shrinks to fit the narrowest phones; 36px everywhere else. */
+  width: min(36px, 100%);
+  aspect-ratio: 1;
   border-radius: 50%;
   display: inline-flex;
   align-items: center;

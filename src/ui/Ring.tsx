@@ -2,7 +2,7 @@ import { useEffect, useId, useState, type ReactNode } from 'react';
 
 /**
  * Progress ring with a volt gradient arc. Animates from empty on mount.
- * `value` is 0–1.
+ * `value` is 0–1. A parent can resize it for narrow screens with `--ring-size`.
  */
 export function Ring({
   value,
@@ -28,8 +28,8 @@ export function Ring({
     return () => cancelAnimationFrame(raf);
   }, [value]);
   return (
-    <div style={{ position: 'relative', width: size, height: size, flexShrink: 0 }} role="img" aria-label={label}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: 'rotate(-90deg)' }}>
+    <div style={{ position: 'relative', width: `var(--ring-size, ${size}px)`, aspectRatio: '1', flexShrink: 0 }} role="img" aria-label={label}>
+      <svg width="100%" height="100%" viewBox={`0 0 ${size} ${size}`} style={{ transform: 'rotate(-90deg)' }}>
         <defs>
           <linearGradient id={id} x1="0" y1="0" x2="1" y2="1">
             <stop offset="0%" stopColor={color ?? 'var(--accent-fill)'} />
