@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { EXERCISES, EXERCISE_BY_ID } from './exercises';
-import { generateWorkout, isAvailable, swapOptions, type GenerateInput } from './generator';
+import { dayTypeOf, generateWorkout, isAvailable, muscleFrequency, nextRotationIndex, SPLIT_PRESETS, swapOptions, type GenerateInput } from './generator';
 import { MUSCLE_IDS } from './muscles';
-import type { Equipment, MuscleId, PerformedSet, Profile, RecoveryMap } from './types';
+import type { DayType, Equipment, MuscleId, PerformedSet, Profile, RecoveryMap } from './types';
 
 const NOW = new Date(2026, 5, 3, 18).getTime();
 const DAY = 86_400_000;
@@ -124,5 +124,80 @@ describe('generateWorkout', () => {
     expect(opts.length).toBeGreaterThan(2);
     for (const o of opts) expect(o.primary).toContain('chest');
     expect(opts[0]!.pattern).toBe('horizontal_push');
+  });
+});
+
+describe('splits', () => {
+  const rotate = (days: DayType[]): Profile => ({ ...profile, daysPerWeek: 3, split: { days, order: 'rotate' } });
+
+  it('runs a chosen split in order', () => {
+    const p = rotate(['push', 'pull', 'core']);
+    expect(generateWorkout(input({ profile: p, recentDays: [] })).focusKind).toBe('push');
+    expect(generateWorkout(input({ profile: p, recentDays: ['push'] })).focusKind).toBe('pull');
+    expect(generateWorkout(input({ profile: p, recentDays: ['pull', 'push'] })).focusKind).toBe('core');
+    expect(generateWorkout(input({ profile: p, recentDays: ['core', 'pull'] })).focusKind).toBe('push');
+  });
+
+  it('keeps its place when a split repeats day types', () => {
+    const ppl6: DayType[] = ['push', 'pull', 'legs', 'push', 'pull', 'legs'];
+    expect(ppl6[nextRotationIndex(ppl6, ['push', 'legs'])]).toBe('pull');
+    expect(ppl6[nextRotationIndex(ppl6, ['legs', 'pull'])]).toBe('push');
+    // Push appears twice; what came before it says which one this was.
+    const uneven: DayType[] = ['push', 'pull', 'push', 'legs'];
+    expect(nextRotationIndex(uneven, ['push', 'pull'])).toBe(3);
+    expect(nextRotationIndex(uneven, ['push', 'legs'])).toBe(1);
+    // Days outside the split (a one-off arms day) don't break the rotation.
+    expect(nextRotationIndex(['upper', 'lower'], ['arms', 'upper'])).toBe(1);
+  });
+
+  it('picks the freshest day when asked to', () => {
+    const p: Profile = { ...profile, split: { days: ['push', 'pull', 'core'], order: 'smart' } };
+    const recovery = { ...fresh(), chest: 0.3, triceps: 0.4, side_delts: 0.5, lats: 0.4, upper_back: 0.4, biceps: 0.5 };
+    expect(generateWorkout(input({ profile: p, recovery })).focusKind).toBe('core');
+  });
+
+  it('a chosen split overrides the days-per-week default', () => {
+    const p: Profile = { ...profile, daysPerWeek: 4, split: { days: ['full'], order: 'rotate' } };
+    expect(generateWorkout(input({ profile: p })).focusKind).toBe('full');
+  });
+
+  it('builds focused body-part days', () => {
+    const core = generateWorkout(input({ focus: 'core' }));
+    expect(core.exercises.length).toBeGreaterThanOrEqual(2);
+    for (const we of core.exercises) expect(exOf(we.exerciseId).primary.some((m) => ['abs', 'obliques', 'lower_back'].includes(m))).toBe(true);
+
+    const chest = generateWorkout(input({ focus: 'chest' }));
+    expect(exOf(chest.exercises[0]!.exerciseId).pattern).toBe('horizontal_push');
+    expect(chest.name.startsWith('Chest')).toBe(true);
+
+    const back = generateWorkout(input({ focus: 'back' }));
+    expect(back.exercises.some((we) => exOf(we.exerciseId).pattern === 'vertical_pull')).toBe(true);
+    expect(back.exercises.some((we) => exOf(we.exerciseId).pattern === 'horizontal_pull')).toBe(true);
+  });
+
+  it('sizes per-session volume by how often the split hits each muscle', () => {
+    const ppc = rotate(['push', 'pull', 'core']);
+    expect(muscleFrequency('chest', ppc)).toBe(1);
+    expect(muscleFrequency('quads', ppc)).toBe(1); // never trained: neutral
+    const ppl6: Profile = { ...profile, daysPerWeek: 6, split: { days: ['push', 'pull', 'legs'], order: 'rotate' } };
+    expect(muscleFrequency('chest', ppl6)).toBe(2);
+    expect(muscleFrequency('chest', { daysPerWeek: 4 })).toBe(2); // upper/lower default
+  });
+
+  it('reads the day type of older workouts from their name', () => {
+    expect(dayTypeOf({ name: 'Push · Chest & Triceps' })).toBe('push');
+    expect(dayTypeOf({ name: 'Arms & shoulders · Biceps' })).toBe('arms');
+    expect(dayTypeOf({ name: 'Freestyle workout' })).toBeUndefined();
+    expect(dayTypeOf({ name: 'Upper body · x', dayType: 'lower' })).toBe('lower');
+  });
+
+  it('every preset generates a workout for every one of its days', () => {
+    for (const preset of SPLIT_PRESETS) {
+      for (const day of preset.days) {
+        const w = generateWorkout(input({ focus: day }));
+        expect(w.exercises.length, `${preset.id}/${day}`).toBeGreaterThanOrEqual(2);
+        expect(w.focusKind).toBe(day);
+      }
+    }
   });
 });

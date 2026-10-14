@@ -3,11 +3,14 @@ import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent, type
 import { useNavigate } from 'react-router-dom';
 import { Icon, type IconName } from '../components/Icon';
 import { Sheet } from '../components/Sheet';
+import { splitCadence, SplitSheet } from '../components/SplitSheet';
 import { exportBackup, exportCsv, importWorkoutCsv, restoreBackup, type CsvImportSummary } from '../db/backup';
 import { ALL_EQUIPMENT, EQUIPMENT_LABEL, GYM_PRESETS, db } from '../db/db';
 import { eraseAll } from '../db/demo';
+import { saveSplit } from '../db/repo';
+import { splitDays, splitName } from '../engine/generator';
 import { formatWeight, formatWeightWhole, fromDisplay } from '../engine/load';
-import type { Equipment, Experience, Goal, Gym, Profile, Sex, Units } from '../engine/types';
+import type { Equipment, Experience, Goal, Gym, Profile, Sex, Split, Units } from '../engine/types';
 import { dayKey, uid } from '../engine/util';
 import { download, formatDate, useProfile } from '../hooks';
 import { getTheme, setTheme, type ThemePref } from '../theme';
@@ -72,7 +75,8 @@ const titleOf = <T,>(options: Option<T>[], value: T) => options.find((o) => o.va
 const modelName = (id: string) => MODELS.find((m) => m.id === id)?.name ?? id;
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-function splitText(days: number): string {
+function splitText(days: number, split: Split | undefined): string {
+  if (split?.days.length) return splitCadence(split.days.length, days);
   if (days <= 3) return 'Full-body sessions.';
   if (days === 4) return 'An upper / lower split.';
   return 'A push / pull / legs rotation.';
@@ -252,7 +256,7 @@ function InlineError({ text }: { text: string | null }) {
 
 // ── Page ───────────────────────────────────────────────────────────────────
 
-type Panel = 'profile' | 'goal' | 'experience' | 'days' | 'length' | 'units' | 'ai' | 'fresh';
+type Panel = 'profile' | 'goal' | 'experience' | 'days' | 'split' | 'length' | 'units' | 'ai' | 'fresh';
 
 export function Settings() {
   const profile = useProfile();
@@ -317,6 +321,13 @@ export function Settings() {
           <Row icon="target" label="Goal" value={titleOf(GOALS, profile.goal)} onClick={() => setPanel('goal')} />
           <Row icon="medal" label="Experience" value={titleOf(EXPERIENCE, profile.experience)} onClick={() => setPanel('experience')} />
           <Row icon="calendar" label="Days per week" value={<span className="num">{profile.daysPerWeek} days</span>} onClick={() => setPanel('days')} />
+          <Row
+            icon="repeat"
+            label="Split"
+            sub={splitName(splitDays(profile))}
+            value={!profile.split ? 'Automatic' : profile.split.order === 'rotate' ? 'In order' : 'Freshest first'}
+            onClick={() => setPanel('split')}
+          />
           <Row icon="clock" label="Session length" value={<span className="num">{profile.sessionMinutes} min</span>} onClick={() => setPanel('length')} />
           <Row icon="scale" label="Units" value={profile.units === 'kg' ? 'Kilograms' : 'Pounds'} onClick={() => setPanel('units')} />
         </div>
@@ -386,7 +397,19 @@ export function Settings() {
           />
         </Sheet>
       )}
-      {panel === 'days' && <DaysSheet days={profile.daysPerWeek} onClose={close} />}
+      {panel === 'days' && <DaysSheet days={profile.daysPerWeek} split={profile.split} onClose={close} />}
+      {panel === 'split' && (
+        <SplitSheet
+          value={profile.split}
+          daysPerWeek={profile.daysPerWeek}
+          onSave={async (split) => {
+            await saveSplit(split);
+            haptics.tap();
+            toast(split ? `Split set to ${splitName(split.days)}` : 'Split set to automatic', { icon: 'check', tone: 'accent' });
+          }}
+          onClose={close}
+        />
+      )}
       {panel === 'length' && <LengthSheet minutes={profile.sessionMinutes} onClose={close} />}
       {panel === 'units' && (
         <Sheet open onClose={close} title="Units" subtitle="Everything is stored precisely, so switching never loses data.">
@@ -487,10 +510,10 @@ function ProfileSheet({ profile, onClose }: { profile: Profile; onClose: () => v
 
 // ── Training sheets ────────────────────────────────────────────────────────
 
-function DaysSheet({ days, onClose }: { days: number; onClose: () => void }) {
+function DaysSheet({ days, split, onClose }: { days: number; split: Split | undefined; onClose: () => void }) {
   const [shown, setShown] = useState(days);
   return (
-    <Sheet open onClose={onClose} title="Days per week" subtitle="The order adapts to whatever you've recovered from.">
+    <Sheet open onClose={onClose} title="Days per week" subtitle="How many sessions a week. Workouts adapt to whatever you've recovered from.">
       <div className="stack lg">
         <div className="set-days" role="group" aria-label="Days per week">
           {[2, 3, 4, 5, 6].map((d) => (
@@ -511,7 +534,7 @@ function DaysSheet({ days, onClose }: { days: number; onClose: () => void }) {
           ))}
         </div>
         <p className="muted center set-days-note" key={shown}>
-          {splitText(shown)}
+          {splitText(shown, split)}
         </p>
       </div>
     </Sheet>

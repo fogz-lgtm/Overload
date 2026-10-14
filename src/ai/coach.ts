@@ -1,8 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { db } from '../db/db';
-import { allExercises, exerciseMap, flattenSets, loadGenerateInput, savePlan } from '../db/repo';
+import { allExercises, exerciseMap, flattenSets, loadGenerateInput, recentDayTypes, savePlan } from '../db/repo';
 import { LIFT_NAMES, strengthScore } from '../engine/analytics';
-import { FOCUS_LABEL, generateWorkout, type Focus } from '../engine/generator';
+import { DAY_TYPES, FOCUS_LABEL, generateWorkout, nextRotationIndex, splitDays, splitName, splitOrder, type Focus } from '../engine/generator';
 import { matchExercise } from '../engine/importers';
 import { formatWeight } from '../engine/load';
 import { MUSCLES, MUSCLE_IDS, weeklySetTarget } from '../engine/muscles';
@@ -36,7 +36,7 @@ Tools:
 
 Style: this is a phone screen. Be direct and brief — a few short paragraphs or a short list, plain text without markdown headings or tables. Use the lifter's units. You're a knowledgeable coach, not a doctor: for sharp, persistent or worsening pain, or anything medical, recommend seeing a professional.`;
 
-const FOCUS_VALUES: Focus[] = ['auto', 'full', 'upper', 'lower', 'push', 'pull', 'legs', 'arms', 'core'];
+const FOCUS_VALUES: Focus[] = ['auto', ...DAY_TYPES];
 const ACTIVITY_KINDS: ActivityKind[] = ['run', 'ride', 'hike', 'swim', 'sport', 'other'];
 const INTENSITIES: Intensity[] = ['easy', 'moderate', 'hard'];
 
@@ -125,6 +125,14 @@ export async function trainingSnapshot(): Promise<string> {
   lines.push(`Now: ${new Date(now).toLocaleString(undefined, { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`);
   lines.push(
     `Lifter: ${profile.name || 'unnamed'}; goal ${profile.goal}; ${profile.experience}; trains ${profile.daysPerWeek}×/week, ${profile.sessionMinutes} min sessions; bodyweight ${formatWeight(profile.bodyweightKg, u)}; units ${u}.`,
+  );
+  const days = splitDays(profile);
+  const order = splitOrder(profile);
+  const nextDay = order === 'rotate' ? FOCUS_LABEL[days[nextRotationIndex(days, recentDayTypes(workouts))]!] : undefined;
+  lines.push(
+    `Split: ${splitName(days)}${profile.split ? ' (chosen by the lifter)' : ' (automatic for their schedule)'}; ${
+      order === 'rotate' ? `followed in order, next up: ${nextDay}` : 'the engine picks whichever day is freshest'
+    }. build_workout with focus 'auto' follows this split.`,
   );
   lines.push(`Active gym: ${active ? `${active.name} (${active.equipment.join(', ') || 'bodyweight only'})` : 'none'}. Other gyms: ${gyms.filter((g) => g !== active).map((g) => g.name).join(', ') || 'none'}.`);
 

@@ -3,7 +3,7 @@ import { flattenSets } from './history';
 import { estimate1RM } from './load';
 import { autoregulate, isTimed } from './progression';
 import { computeRecovery } from './recovery';
-import type { Activity, ActivityKind, Equipment, Exercise, Intensity, Profile, SetEntry, Workout } from './types';
+import type { Activity, ActivityKind, DayType, Equipment, Exercise, Intensity, Profile, SetEntry, Workout } from './types';
 import { mulberry32, uid } from './util';
 import { weeklySets } from './volume';
 
@@ -77,6 +77,7 @@ export function simulateHistory(opts: {
       weekly: weeklySets(history, byId, at),
       prefs: {},
       now: at,
+      recentDays: [...workouts].reverse().map((w) => w.dayType).filter((x): x is DayType => !!x),
       seed: Math.floor(rand() * 1e9),
     });
     if (!gen.exercises.length) continue;
@@ -132,6 +133,7 @@ export function simulateHistory(opts: {
       startedAt: at,
       finishedAt: clock + 2 * 60_000,
       gymId: opts.gymId,
+      dayType: gen.focusKind,
       focus: gen.focus,
       summary: gen.summary,
       estimatedMinutes: gen.estimatedMinutes,

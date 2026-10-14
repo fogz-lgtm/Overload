@@ -1,9 +1,9 @@
 import { detectPRs, type PR } from '../engine/analytics';
 import { EXERCISES } from '../engine/exercises';
-import { generateWorkout, type Focus, type GenerateInput, type GeneratedWorkout } from '../engine/generator';
+import { dayTypeOf, generateWorkout, type Focus, type GenerateInput, type GeneratedWorkout } from '../engine/generator';
 import { computeRecovery } from '../engine/recovery';
 import { flattenSets } from '../engine/history';
-import type { Exercise, ExercisePref, MuscleId, Workout } from '../engine/types';
+import type { DayType, Exercise, ExercisePref, MuscleId, Split, Workout } from '../engine/types';
 import { uid } from '../engine/util';
 import { weeklySets } from '../engine/volume';
 import { db } from './db';
@@ -45,12 +45,21 @@ export async function loadGenerateInput(
     equipment: gym?.equipment ?? [],
     exercises,
     history,
+    recentDays: recentDayTypes(workouts),
     recovery: computeRecovery(history, activities, byId, now),
     weekly: weeklySets(history, byId, now),
     prefs,
     now,
     ...opts,
   };
+}
+
+/** Day types of finished workouts, newest first. */
+export function recentDayTypes(workouts: Workout[]): DayType[] {
+  return [...workouts]
+    .sort((a, b) => (b.finishedAt ?? 0) - (a.finishedAt ?? 0))
+    .map(dayTypeOf)
+    .filter((d): d is DayType => !!d);
 }
 
 /** Saves a generated plan as a planned workout, replacing any previous unstarted plan. */
@@ -64,6 +73,7 @@ export async function savePlan(gen: GeneratedWorkout, gymId: string): Promise<st
       status: 'planned',
       createdAt: Date.now(),
       gymId,
+      dayType: gen.focusKind,
       focus: gen.focus,
       summary: gen.summary,
       estimatedMinutes: gen.estimatedMinutes,
@@ -78,6 +88,12 @@ export async function generateAndSave(opts: Parameters<typeof loadGenerateInput>
   const gen = generateWorkout(input);
   const gymId = opts.gymId ?? input.profile.activeGymId;
   return savePlan(gen, gymId);
+}
+
+/** Saves the lifter's split (undefined: automatic) and rebuilds the waiting plan to follow it. */
+export async function saveSplit(split: Split | undefined): Promise<void> {
+  await db.profile.update('me', { split });
+  if (!(await db.workouts.where('status').equals('active').count())) await generateAndSave();
 }
 
 export async function startWorkout(id: string): Promise<void> {

@@ -5,17 +5,18 @@ import { BodyMap, Figure, MuscleThumb, targetFill } from '../components/BodyMap'
 import { SwapSheet } from '../components/ExerciseSheets';
 import { Icon, type IconName } from '../components/Icon';
 import { Sheet } from '../components/Sheet';
+import { DayPills, SplitSheet } from '../components/SplitSheet';
 import { db } from '../db/db';
 import { eraseAll } from '../db/demo';
-import { generateAndSave, startEmptyWorkout, startWorkout } from '../db/repo';
+import { generateAndSave, recentDayTypes, saveSplit, startEmptyWorkout, startWorkout } from '../db/repo';
 import { detectPRs, weekStreak } from '../engine/analytics';
-import { estimateMinutes, FOCUS_LABEL, splitFor, type Focus } from '../engine/generator';
+import { DAY_TYPES, dayTypeOf, estimateMinutes, FOCUS_LABEL, nextRotationIndex, splitDays, splitName as rotationName, splitOrder, type Focus } from '../engine/generator';
 import { flattenSets } from '../engine/history';
 import { formatWeight } from '../engine/load';
 import { MUSCLES, MUSCLE_IDS, PRIORITY_MUSCLES } from '../engine/muscles';
 import { isTimed } from '../engine/progression';
 import { hoursUntilRecovered } from '../engine/recovery';
-import type { ActivityKind, Exercise, Intensity, MuscleId, Profile, Workout, WorkoutExercise } from '../engine/types';
+import type { ActivityKind, DayType, Exercise, Intensity, MuscleId, Profile, Workout, WorkoutExercise } from '../engine/types';
 import { dayKey, uid } from '../engine/util';
 import { formatDuration, formatEta, formatVolume, relativeDay, useExercises, useNow, useProfile, useTrainingState } from '../hooks';
 import { haptics } from '../ui/haptics';
@@ -55,6 +56,7 @@ export function Today() {
   const active = useLiveQuery(async () => (await db.workouts.where('status').equals('active').first()) ?? null);
   const gyms = useLiveQuery(() => db.gyms.toArray());
   const [customize, setCustomize] = useState(false);
+  const [splitOpen, setSplitOpen] = useState(false);
   const [logActivity, setLogActivity] = useState(false);
   const [busy, setBusy] = useState(false);
   const autoGen = useRef(false);
@@ -97,6 +99,14 @@ export function Today() {
 
   const trainedToday = state.workouts.some((w) => dayKey(w.finishedAt ?? 0) === dayKey(now));
   const last = state.workouts[0];
+  const rotation = splitDays(profile);
+  const day = planned ? dayTypeOf(planned) : undefined;
+  let current = day ? rotation.indexOf(day) : -1;
+  if (day && splitOrder(profile) === 'rotate') {
+    // A day repeated in the rotation: highlight the one that's actually up next.
+    const next = nextRotationIndex(rotation, recentDayTypes(state.workouts));
+    if (rotation[next] === day) current = next;
+  }
 
   async function regenerate(opts: Parameters<typeof generateAndSave>[0] = {}) {
     setBusy(true);
@@ -184,6 +194,9 @@ export function Today() {
           }}
           onRegenerate={() => regenerate()}
           onCustomize={() => setCustomize(true)}
+          rotation={rotation}
+          current={current >= 0 ? current : undefined}
+          onSplit={() => setSplitOpen(true)}
         />
       )}
 
@@ -215,6 +228,18 @@ export function Today() {
         }}
       />
       <ActivitySheet open={logActivity} onClose={() => setLogActivity(false)} />
+      {splitOpen && (
+        <SplitSheet
+          value={profile.split}
+          daysPerWeek={profile.daysPerWeek}
+          onSave={async (split) => {
+            await saveSplit(split);
+            haptics.tap();
+            toast(split ? `Following ${rotationName(split.days)}` : 'Split set to automatic', { icon: 'check', tone: 'accent' });
+          }}
+          onClose={() => setSplitOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -251,6 +276,9 @@ function PlanCard({
   onStart,
   onRegenerate,
   onCustomize,
+  rotation,
+  current,
+  onSplit,
 }: {
   plan?: Workout;
   trainedToday: boolean;
@@ -260,6 +288,9 @@ function PlanCard({
   onStart: () => void;
   onRegenerate: () => void;
   onCustomize: () => void;
+  rotation: DayType[];
+  current?: number;
+  onSplit: () => void;
 }) {
   const [preview, setPreview] = useState<WorkoutExercise | null>(null);
   const [swapFor, setSwapFor] = useState<WorkoutExercise | null>(null);
@@ -295,6 +326,16 @@ function PlanCard({
         </div>
         <MuscleThumb primary={focus.primary} secondary={focus.secondary} size={78} label={`Targets ${focus.primary.map((m) => MUSCLES[m].name).join(', ')}`} />
       </div>
+
+      <button type="button" className="today-split" onClick={onSplit}>
+        <span className="sr-only">Your split: </span>
+        <DayPills days={rotation} current={current} />
+        {current !== undefined && rotation.length > 1 && <span className="sr-only">, today is day {current + 1} of {rotation.length}. </span>}
+        <span className="today-split-edit">
+          {profile.split ? 'Split' : 'Choose split'}
+          <Icon name="chevron" size={15} />
+        </span>
+      </button>
 
       <div className="today-meta">
         <span>
@@ -601,8 +642,8 @@ function CustomizeSheet({
   const [minutes, setMinutes] = useState(profile.sessionMinutes);
   const [avoid, setAvoid] = useState<MuscleId[]>([]);
   const [gymId, setGymId] = useState(profile.activeGymId);
-  const split = splitFor(profile.daysPerWeek);
-  const focuses: Focus[] = ['auto', ...split, ...(['full', 'upper', 'lower', 'push', 'pull', 'legs', 'arms', 'core'] as Focus[]).filter((f) => !split.includes(f as never))];
+  const split = [...new Set(splitDays(profile))];
+  const focuses: Focus[] = ['auto', ...split, ...DAY_TYPES.filter((d) => !split.includes(d))];
 
   return (
     <Sheet open={open} onClose={onClose} title="Customize today" subtitle="The engine rebuilds the session around your constraints.">

@@ -96,6 +96,16 @@ export interface Exercise {
 }
 
 export type Goal = 'strength' | 'hypertrophy' | 'general' | 'endurance';
+
+/** A kind of training day a split rotates through. */
+export type DayType = 'full' | 'upper' | 'lower' | 'push' | 'pull' | 'legs' | 'chest' | 'back' | 'shoulders' | 'arms' | 'core';
+
+/** The lifter's chosen routine. */
+export interface Split {
+  days: DayType[];
+  /** 'rotate': always the next day in order. 'smart': whichever day is freshest. */
+  order: 'rotate' | 'smart';
+}
 export type Experience = 'beginner' | 'intermediate' | 'advanced';
 export type Units = 'kg' | 'lb';
 export type Sex = 'male' | 'female' | 'unspecified';
@@ -115,6 +125,8 @@ export interface Profile {
   createdAt: number;
   /** Exploring generated sample data rather than a real log. */
   demo?: boolean;
+  /** Chosen split; when absent the split follows days per week. */
+  split?: Split;
   ai?: { apiKey: string; model: string };
 }
 
@@ -161,6 +173,8 @@ export interface Workout {
   startedAt?: number;
   finishedAt?: number;
   gymId: string;
+  /** Which day of the split this was (absent for freestyle and imported workouts). */
+  dayType?: DayType;
   focus: string[];
   /** Why the generator chose this session. */
   summary: string;

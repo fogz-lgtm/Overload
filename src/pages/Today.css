@@ -35,11 +35,43 @@
 .today-plan {
   padding: 20px;
 }
+.today-split {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: calc(100% + 16px);
+  margin: 14px -8px 0;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--d2);
+}
+.today-split:hover,
+.today-split:active {
+  background: var(--highlight);
+}
+.today-split .split-pills {
+  flex: 1;
+  margin: 0;
+}
+.today-split-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
 .today-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 16px;
+  margin-top: 10px;
 }
 .today-meta span {
   display: inline-flex;

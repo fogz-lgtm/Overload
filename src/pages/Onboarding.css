@@ -395,8 +395,17 @@
 }
 .ob-week-head {
   display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.ob-week-head .grow {
+  display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
+}
+.ob-week-head .btn {
+  flex-shrink: 0;
 }
 .ob-week-head strong {
   font-family: var(--display);

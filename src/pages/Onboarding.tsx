@@ -1,11 +1,13 @@
 import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Icon, type IconName } from '../components/Icon';
+import { splitCadence, SplitSheet } from '../components/SplitSheet';
 import { ALL_EQUIPMENT, EQUIPMENT_LABEL, GYM_PRESETS, db } from '../db/db';
 import { loadDemoData } from '../db/demo';
-import { splitFor, type Focus } from '../engine/generator';
+import { splitFor, splitName } from '../engine/generator';
 import { fromDisplay } from '../engine/load';
-import type { Equipment, Experience, Goal, Sex, Units } from '../engine/types';
+import type { Equipment, Experience, Goal, Sex, Split, Units } from '../engine/types';
 import { uid } from '../engine/util';
+import { DAY_COLOR, DAY_SHORT } from '../ui/days';
 import { haptics } from '../ui/haptics';
 import { Range } from '../ui/Range';
 import { Ring } from '../ui/Ring';
@@ -38,17 +40,6 @@ const STANDARDS: { id: Sex; label: string; note: string }[] = [
   { id: 'unspecified', label: 'Blended', note: 'Your lifts are ranked against an average of men’s and women’s standards.' },
 ];
 
-type Session = Exclude<Focus, 'auto'>;
-
-const SESSION_SHORT: Partial<Record<Session, string>> = { full: 'Full', upper: 'Upper', lower: 'Lower', push: 'Push', pull: 'Pull', legs: 'Legs' };
-const SESSION_TAG: Partial<Record<Session, string>> = {
-  full: 'var(--tag-full)',
-  upper: 'var(--tag-pull)',
-  lower: 'var(--tag-legs)',
-  push: 'var(--tag-push)',
-  pull: 'var(--tag-pull)',
-  legs: 'var(--tag-legs)',
-};
 // Training days spread across a Monday-first week so rest days fall between sessions.
 const WEEK_DAYS: Record<number, number[]> = { 2: [0, 3], 3: [0, 2, 4], 4: [0, 1, 3, 4], 5: [0, 1, 2, 4, 5], 6: [0, 1, 2, 3, 4, 5] };
 const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
@@ -62,12 +53,8 @@ const BUILD_CHECKS: { text: string; icon: IconName }[] = [
 const STEPS = 6;
 const LAST = STEPS - 1;
 
-function splitName(days: number): string {
-  const split = splitFor(days);
-  return split.length === 1 ? 'Full body' : split.map((s) => SESSION_SHORT[s]).join(' / ');
-}
-
-function splitDetail(days: number): string {
+function splitDetail(days: number, split: Split | undefined): string {
+  if (split) return splitCadence(split.days.length, days);
   const perWeek = days / splitFor(days).length;
   if (!Number.isInteger(perWeek)) return 'Each muscle trained 1–2 times a week';
   return `Each muscle trained ${perWeek === 2 ? 'twice' : perWeek === 3 ? 'three times' : `${perWeek} times`} a week`;
@@ -83,6 +70,8 @@ export function Onboarding() {
   const [goal, setGoal] = useState<Goal>('hypertrophy');
   const [experience, setExperience] = useState<Experience>('beginner');
   const [days, setDays] = useState(3);
+  const [split, setSplit] = useState<Split | undefined>();
+  const [splitOpen, setSplitOpen] = useState(false);
   const [minutes, setMinutes] = useState(50);
   const [presetName, setPresetName] = useState(GYM_PRESETS[0]!.name);
   const [equipment, setEquipment] = useState<Equipment[]>(GYM_PRESETS[0]!.equipment);
@@ -128,6 +117,7 @@ export function Onboarding() {
           experience,
           goal,
           daysPerWeek: days,
+          ...(split && { split }),
           sessionMinutes: minutes,
           activeGymId: gymId,
           onboarded: true,
@@ -143,7 +133,8 @@ export function Onboarding() {
   const toggleEquipment = (e: Equipment) =>
     setEquipment((cur) => (cur.includes(e) ? cur.filter((x) => x !== e) : [...cur, e]));
 
-  if (building) return <Building tags={[splitName(days), `${days}× a week`, `${minutes} min`, presetName]} />;
+  const rotation = split?.days ?? splitFor(days);
+  if (building) return <Building tags={[splitName(rotation), `${days}× a week`, `${minutes} min`, presetName]} />;
 
   const question = (eyebrowText: string, title: string, sub?: string) => (
     <header className="ob-q">
@@ -252,7 +243,7 @@ export function Onboarding() {
                 </button>
               ))}
             </div>
-            <WeekPreview days={days} />
+            <WeekPreview days={days} split={split} onChange={() => setSplitOpen(true)} />
             <div className="card tight ob-length">
               <Range label="Session length" value={minutes} min={20} max={90} step={5} onChange={setMinutes} format={(v) => `${v} min`} />
               <p className="small faint">Exercise count and rest times scale to fit.</p>
@@ -350,6 +341,7 @@ export function Onboarding() {
         )}
         {step === LAST && !valid && <p className="ob-hint small faint">Enter your bodyweight to continue</p>}
       </footer>
+      {splitOpen && <SplitSheet value={split} daysPerWeek={days} onSave={setSplit} onClose={() => setSplitOpen(false)} />}
     </main>
   );
 }
@@ -388,28 +380,37 @@ function Option({ title, body, selected, onSelect, children }: { title: string; 
   );
 }
 
-function WeekPreview({ days }: { days: number }) {
-  const split = splitFor(days);
+function WeekPreview({ days, split, onChange }: { days: number; split: Split | undefined; onChange: () => void }) {
+  const rotation = split?.days ?? splitFor(days);
   const on = WEEK_DAYS[days] ?? [];
   return (
     <div className="card ob-week">
       <div className="ob-week-head">
-        <strong>{splitName(days)}</strong>
-        <span className="small muted">{splitDetail(days)}</span>
+        <div className="grow">
+          <strong>{splitName(rotation)}</strong>
+          <span className="small muted">{splitDetail(days, split)}</span>
+        </div>
+        <button type="button" className="btn sm" onClick={onChange}>
+          {split ? 'Change' : 'Choose split'}
+        </button>
       </div>
       <ol className="ob-week-grid" aria-label={`${days} sessions a week`}>
         {WEEKDAYS.map((d, i) => {
           const n = on.indexOf(i);
-          const session = n >= 0 ? split[n % split.length] : undefined;
+          const session = n >= 0 ? rotation[n % rotation.length] : undefined;
           return (
-            <li key={i} className={session ? 'on' : ''} style={session ? ({ '--tag': SESSION_TAG[session] } as CSSProperties) : undefined}>
+            <li key={i} className={session ? 'on' : ''} style={session ? ({ '--tag': DAY_COLOR[session] } as CSSProperties) : undefined}>
               <span className="ob-week-day">{d}</span>
-              <span className="ob-week-cell">{session && SESSION_SHORT[session]}</span>
+              <span className="ob-week-cell">{session && DAY_SHORT[session]}</span>
             </li>
           );
         })}
       </ol>
-      <p className="small faint">The order adapts to whatever you’ve recovered from.</p>
+      <p className="small faint">
+        {split?.order === 'rotate' && rotation.length > 1
+          ? 'Runs in order, picking up wherever you left off.'
+          : 'The order adapts to whatever you’ve recovered from.'}
+      </p>
     </div>
   );
 }

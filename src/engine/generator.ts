@@ -2,6 +2,7 @@ import { warmupSets } from './load';
 import { MUSCLES, PRIORITY_MUSCLES, weeklySetTarget } from './muscles';
 import { goalScheme, minLoadKg, prescribe, type Prescription } from './progression';
 import type {
+  DayType,
   Equipment,
   Exercise,
   ExercisePref,
@@ -11,12 +12,16 @@ import type {
   Profile,
   RecoveryMap,
   SetEntry,
+  Split,
+  Workout,
   WorkoutExercise,
 } from './types';
 import { dayKey, hashString, listJoin, mulberry32, uid } from './util';
 import { volumeDeficit } from './volume';
 
-export type Focus = 'auto' | 'full' | 'upper' | 'lower' | 'push' | 'pull' | 'legs' | 'arms' | 'core';
+export type Focus = 'auto' | DayType;
+
+export const DAY_TYPES: DayType[] = ['full', 'upper', 'lower', 'push', 'pull', 'legs', 'chest', 'back', 'shoulders', 'arms', 'core'];
 
 export const FOCUS_LABEL: Record<Focus, string> = {
   auto: 'Smart pick',
@@ -26,20 +31,99 @@ export const FOCUS_LABEL: Record<Focus, string> = {
   push: 'Push',
   pull: 'Pull',
   legs: 'Legs',
-  arms: 'Arms & shoulders',
+  chest: 'Chest',
+  back: 'Back',
+  shoulders: 'Shoulders',
+  arms: 'Arms',
   core: 'Core',
 };
 
-export const FOCUS_MUSCLES: Record<Exclude<Focus, 'auto'>, MuscleId[]> = {
+export const FOCUS_MUSCLES: Record<DayType, MuscleId[]> = {
   full: ['quads', 'chest', 'lats', 'upper_back', 'hamstrings', 'glutes', 'side_delts', 'rear_delts', 'biceps', 'triceps', 'calves', 'abs'],
   upper: ['chest', 'lats', 'upper_back', 'side_delts', 'rear_delts', 'front_delts', 'biceps', 'triceps'],
   lower: ['quads', 'hamstrings', 'glutes', 'calves', 'adductors', 'abs', 'obliques'],
   push: ['chest', 'side_delts', 'front_delts', 'triceps'],
   pull: ['lats', 'upper_back', 'rear_delts', 'biceps', 'traps', 'forearms'],
   legs: ['quads', 'hamstrings', 'glutes', 'calves', 'adductors'],
-  arms: ['biceps', 'triceps', 'side_delts', 'rear_delts', 'forearms'],
+  chest: ['chest', 'front_delts', 'triceps'],
+  back: ['lats', 'upper_back', 'rear_delts', 'traps', 'biceps', 'lower_back'],
+  shoulders: ['side_delts', 'front_delts', 'rear_delts', 'traps'],
+  arms: ['biceps', 'triceps', 'forearms'],
   core: ['abs', 'obliques', 'lower_back'],
 };
+
+export interface SplitPreset {
+  id: string;
+  name: string;
+  /** Empty = follow days per week. */
+  days: DayType[];
+  blurb: string;
+}
+
+export const SPLIT_PRESETS: SplitPreset[] = [
+  { id: 'auto', name: 'Automatic', days: [], blurb: 'Picked from your days per week: full body, upper/lower or push/pull/legs.' },
+  { id: 'full', name: 'Full body', days: ['full'], blurb: 'Everything, every session. Best for 2–3 days a week.' },
+  { id: 'ul', name: 'Upper / Lower', days: ['upper', 'lower'], blurb: 'Each muscle twice a week on 4 days.' },
+  { id: 'ppl', name: 'Push / Pull / Legs', days: ['push', 'pull', 'legs'], blurb: 'The classic. Great on 3 or 6 days.' },
+  { id: 'pplul', name: 'Push / Pull / Legs / Upper / Lower', days: ['push', 'pull', 'legs', 'upper', 'lower'], blurb: 'A 5-day hybrid with extra frequency.' },
+  { id: 'ppc', name: 'Push / Pull / Core', days: ['push', 'pull', 'core'], blurb: 'For runners and riders whose legs already get the work.' },
+  { id: 'bro', name: 'Chest / Back / Legs / Shoulders / Arms', days: ['chest', 'back', 'legs', 'shoulders', 'arms'], blurb: 'One body part a day, bodybuilder style.' },
+];
+
+/** The rotation a lifter with this many days per week follows by default. */
+export function splitFor(daysPerWeek: number): DayType[] {
+  if (daysPerWeek <= 3) return ['full'];
+  if (daysPerWeek === 4) return ['upper', 'lower'];
+  return ['push', 'pull', 'legs'];
+}
+
+/** The lifter's rotation: their chosen split, or the default for their schedule. */
+export function splitDays(profile: Pick<Profile, 'daysPerWeek' | 'split'>): DayType[] {
+  return profile.split?.days.length ? profile.split.days : splitFor(profile.daysPerWeek);
+}
+
+/** How the days are picked; chosen splits default to running in order. */
+export function splitOrder(profile: Pick<Profile, 'split'>): Split['order'] {
+  return profile.split?.days.length ? profile.split.order : 'smart';
+}
+
+/** Human name for a rotation: "Push / Pull / Core". */
+export function splitName(days: DayType[]): string {
+  const preset = SPLIT_PRESETS.find((p) => p.days.length && p.days.join() === days.join());
+  return preset?.name ?? days.map((d) => FOCUS_LABEL[d]).join(' / ');
+}
+
+/** Day type of a past workout; older workouts only carry it in their name. */
+export function dayTypeOf(w: Pick<Workout, 'dayType' | 'name'>): DayType | undefined {
+  if (w.dayType) return w.dayType;
+  const label = w.name.split(' · ')[0];
+  return DAY_TYPES.find((d) => FOCUS_LABEL[d] === label) ?? (label === 'Arms & shoulders' ? 'arms' : undefined);
+}
+
+/**
+ * Position of the next day in an in-order rotation, given the day types of
+ * recent workouts (newest first). Repeated day types in a split (e.g. a
+ * six-day PPL) are disambiguated by the workout before.
+ */
+export function nextRotationIndex(days: DayType[], recent: DayType[]): number {
+  const inSplit = recent.filter((d) => days.includes(d));
+  const last = inSplit[0];
+  if (!last) return 0;
+  const n = days.length;
+  const candidates = days.map((d, i) => (d === last ? i : -1)).filter((i) => i >= 0);
+  const prev = inSplit[1];
+  const byPrev = prev === undefined ? undefined : candidates.find((i) => days[(i - 1 + n) % n] === prev);
+  const at = byPrev ?? candidates[0]!;
+  return (at + 1) % n;
+}
+
+/** Times per week a muscle gets trained under the lifter's split. */
+export function muscleFrequency(m: MuscleId, profile: Pick<Profile, 'daysPerWeek' | 'split'>): number {
+  const days = splitDays(profile);
+  const hits = days.filter((d) => FOCUS_MUSCLES[d].includes(m)).length;
+  if (!hits) return 1;
+  return Math.max(0.5, (profile.daysPerWeek * hits) / days.length);
+}
 
 const LARGE = new Set<MuscleId>(['quads', 'glutes', 'hamstrings', 'chest', 'lats', 'upper_back']);
 const LOADABLE = new Set<Equipment>(['barbell', 'dumbbells', 'kettlebells', 'cable', 'machines', 'leg_press', 'smith_machine']);
@@ -53,7 +137,7 @@ interface Slot {
  * The big movement patterns each session type is built around. Slots are filled
  * first; accessories then fill the remaining time by muscle-volume need.
  */
-const ANCHORS: Record<Exclude<Focus, 'auto'>, Slot[]> = {
+const ANCHORS: Record<DayType, Slot[]> = {
   full: [
     { patterns: ['squat', 'lunge'], muscles: ['quads'] },
     { patterns: ['horizontal_push', 'vertical_push'], muscles: ['chest', 'front_delts'] },
@@ -85,22 +169,19 @@ const ANCHORS: Record<Exclude<Focus, 'auto'>, Slot[]> = {
     { patterns: ['hinge'], muscles: ['hamstrings', 'glutes'] },
     { patterns: ['lunge', 'squat'], muscles: ['quads', 'glutes'] },
   ],
+  chest: [
+    { patterns: ['horizontal_push'], muscles: ['chest'] },
+    { patterns: ['horizontal_push'], muscles: ['chest'] },
+  ],
+  back: [
+    { patterns: ['vertical_pull'], muscles: ['lats'] },
+    { patterns: ['horizontal_pull'], muscles: ['upper_back', 'lats'] },
+    { patterns: ['horizontal_pull', 'vertical_pull'], muscles: ['upper_back', 'lats'] },
+  ],
+  shoulders: [{ patterns: ['vertical_push'], muscles: ['front_delts', 'side_delts'] }],
   arms: [],
   core: [],
 };
-
-/** The rotation a lifter with this many days per week follows. */
-export function splitFor(daysPerWeek: number): Exclude<Focus, 'auto'>[] {
-  if (daysPerWeek <= 3) return ['full'];
-  if (daysPerWeek === 4) return ['upper', 'lower'];
-  return ['push', 'pull', 'legs'];
-}
-
-/** Times per week each muscle gets trained under the lifter's split. */
-function weeklyFrequency(daysPerWeek: number): number {
-  const split = splitFor(daysPerWeek);
-  return Math.max(1, daysPerWeek / split.length);
-}
 
 export interface GenerateInput {
   profile: Profile;
@@ -115,6 +196,8 @@ export interface GenerateInput {
   focus?: Focus;
   minutes?: number;
   avoidMuscles?: MuscleId[];
+  /** Day types of recent finished workouts, newest first — drives in-order splits. */
+  recentDays?: DayType[];
   /** Change to get a different (but equally valid) workout. */
   seed?: number;
 }
@@ -122,7 +205,7 @@ export interface GenerateInput {
 export interface GeneratedWorkout {
   name: string;
   focus: MuscleId[];
-  focusKind: Exclude<Focus, 'auto'>;
+  focusKind: DayType;
   summary: string;
   estimatedMinutes: number;
   exercises: WorkoutExercise[];
@@ -132,10 +215,17 @@ export function isAvailable(ex: Exercise, equipment: Equipment[]): boolean {
   return ex.equipment.every((e) => equipment.includes(e));
 }
 
-export function pickFocus(input: GenerateInput): { focus: Exclude<Focus, 'auto'>; reason: string } {
+export function pickFocus(input: GenerateInput): { focus: DayType; reason: string } {
   if (input.focus && input.focus !== 'auto') return { focus: input.focus, reason: 'You picked this focus.' };
-  const options = splitFor(input.profile.daysPerWeek);
-  if (options.length === 1) return { focus: options[0]!, reason: 'Full-body suits your schedule.' };
+  const days = splitDays(input.profile);
+  if (days.length === 1) {
+    return { focus: days[0]!, reason: input.profile.split ? `Your split is ${FOCUS_LABEL[days[0]!].toLowerCase()}.` : 'Full-body suits your schedule.' };
+  }
+  if (splitOrder(input.profile) === 'rotate') {
+    const i = nextRotationIndex(days, input.recentDays ?? []);
+    return { focus: days[i]!, reason: `Day ${i + 1} of ${days.length} in your ${splitName(days)} split.` };
+  }
+  const options = [...new Set(days)];
   let best = options[0]!;
   let bestScore = -Infinity;
   for (const f of options) {
@@ -310,7 +400,6 @@ export function generateWorkout(input: GenerateInput): GeneratedWorkout {
   const avoid = new Set(input.avoidMuscles ?? []);
 
   const { focus, reason } = pickFocus(input);
-  const freq = weeklyFrequency(profile.daysPerWeek);
 
   // Per-session set targets, trimmed for muscles that are still recovering or
   // have already hit their weekly ceiling.
@@ -320,7 +409,7 @@ export function generateWorkout(input: GenerateInput): GeneratedWorkout {
     if (avoid.has(m)) continue;
     const { min, max } = weeklySetTarget(m, profile.goal);
     const cap = LARGE.has(m) ? 8 : 6;
-    let target = Math.min(cap, Math.max(2, Math.round((min + max) / 2 / freq)));
+    let target = Math.min(cap, Math.max(2, Math.round((min + max) / 2 / muscleFrequency(m, profile))));
     const done = input.weekly[m];
     if (done >= max && max > 0) {
       skipped.push(`${MUSCLES[m].name.toLowerCase()} (weekly volume met)`);
