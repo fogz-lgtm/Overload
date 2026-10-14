@@ -16,6 +16,7 @@ import { CountUp } from '../ui/CountUp';
 import { EmptyState } from '../ui/EmptyState';
 import { haptics } from '../ui/haptics';
 import { toast } from '../ui/toast';
+import { forgetStravaActivity } from '../strava/client';
 import './History.css';
 
 // ── Shared workout helpers (also used by WorkoutDetail) ─────────────────────
@@ -317,6 +318,7 @@ export function History() {
   const removeActivity = async (a: Activity) => {
     setToDelete(null);
     await db.activities.delete(a.id);
+    if (a.source === 'strava') await forgetStravaActivity(a.id);
     haptics.tap();
     toast(`${ACTIVITY[a.kind].label} deleted`, { icon: 'trash' });
   };
@@ -354,7 +356,7 @@ export function History() {
               return e.kind === 'workout' ? (
                 <WorkoutCard key={e.id} workout={e.workout} byId={ex.byId} prs={prs.get(e.id) ?? 0} units={units} className={lit} style={style} />
               ) : (
-                <CardioRow key={e.id} activity={e.activity} className={lit} style={style} onDelete={() => setToDelete(e.activity)} />
+                <CardioRow key={e.id} activity={e.activity} units={units} className={lit} style={style} onDelete={() => setToDelete(e.activity)} />
               );
             })}
           </div>
@@ -612,7 +614,12 @@ function WorkoutCard({
   );
 }
 
-function CardioRow({ activity, className, style, onDelete }: { activity: Activity; className: string; style: CSSProperties; onDelete: () => void }) {
+function distanceText(km: number, units: Units): string {
+  const d = units === 'lb' ? km * 0.621371 : km;
+  return `${d < 10 ? d.toFixed(1) : Math.round(d)} ${units === 'lb' ? 'mi' : 'km'}`;
+}
+
+function CardioRow({ activity, units, className, style, onDelete }: { activity: Activity; units: Units; className: string; style: CSSProperties; onDelete: () => void }) {
   const meta = ACTIVITY[activity.kind];
   const intensity = activity.intensity.charAt(0).toUpperCase() + activity.intensity.slice(1);
   return (
@@ -621,9 +628,13 @@ function CardioRow({ activity, className, style, onDelete }: { activity: Activit
         <Icon name={meta.icon} size={18} />
       </span>
       <span className="grow">
-        <span className="hist-cardio-title">
-          {meta.label}
-          {activity.note && <span className="hist-cardio-note"> · {activity.note}</span>}
+        <span className="hist-cardio-head">
+          <span className="hist-cardio-title">
+            {meta.label}
+            {activity.distanceKm !== undefined && <span className="num"> {distanceText(activity.distanceKm, units)}</span>}
+            {activity.note && <span className="hist-cardio-note"> · {activity.note}</span>}
+          </span>
+          {activity.source === 'strava' && <span className="hist-source">Strava</span>}
         </span>
         <span className="hist-meta num">
           <span>{weekday(activity.at)}</span>

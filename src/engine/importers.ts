@@ -1,16 +1,18 @@
-// Importers for workout history exported from other apps (Strong, Hevy).
+// Importers for workout history exported from other apps (Gravl, Strong, Hevy).
 // Pure functions: text in, plain data out. Persisting the result and mapping
 // exercises onto the library is left to the caller (see matchExercise).
 
 import type { Exercise, SetKind } from './types';
 
-export type ImportFormat = 'strong' | 'hevy';
+export type ImportFormat = 'gravl' | 'strong' | 'hevy';
 
 export interface ImportedSet {
   weightKg: number;
   reps: number;
   rir?: number;
   kind: SetKind;
+  /** A lighter set straight after the top set, as in a drop set. */
+  drop?: boolean;
 }
 
 export interface ImportedExercise {
@@ -30,6 +32,8 @@ export interface ImportResult {
   format: ImportFormat;
   workouts: ImportedWorkout[];
   warnings: string[];
+  /** Weights on bodyweight moves include the lifter's bodyweight (Gravl logs a pull-up at bodyweight). */
+  bodyweightIncluded?: boolean;
 }
 
 const LB_TO_KG = 0.45359237;
@@ -98,17 +102,18 @@ function detectDelimiter(text: string): ',' | ';' {
 // Format detection & shared helpers
 
 /** "Workout Name" / "workout_name" / "Weight (kg)" → "workout name" / "weight kg". */
-const normKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+export const normKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
-/** Detects Strong vs Hevy from header row; returns null if neither. */
+/** Detects Gravl, Strong or Hevy from the header row; returns null if none. */
 export function detectFormat(header: string[]): ImportFormat | null {
   const keys = new Set(header.map(normKey));
   if (keys.has('exercise title') && keys.has('start time')) return 'hevy';
+  if (keys.has('exercise') && keys.has('workout') && keys.has('set type') && keys.has('date')) return 'gravl';
   if (keys.has('exercise name') && keys.has('date') && (keys.has('set order') || keys.has('reps'))) return 'strong';
   return null;
 }
 
-function columnIndex(keys: string[], ...names: string[]): number {
+export function columnIndex(keys: string[], ...names: string[]): number {
   for (const n of names) {
     const i = keys.indexOf(n);
     if (i >= 0) return i;
@@ -120,10 +125,10 @@ function columnIndex(keys: string[], ...names: string[]): number {
 const columnByPrefix = (keys: string[], prefix: string) =>
   keys.findIndex((k) => k === prefix || k.startsWith(prefix + ' '));
 
-const cell = (row: string[], i: number) => (i < 0 ? '' : (row[i] ?? '').trim());
+export const cell = (row: string[], i: number) => (i < 0 ? '' : (row[i] ?? '').trim());
 
 /** Number from a cell; accepts a decimal comma ("62,5"). Undefined when blank or invalid. */
-function parseNumber(raw: string): number | undefined {
+export function parseNumber(raw: string): number | undefined {
   const t = raw.replace(/\s+/g, '');
   if (!t) return undefined;
   const n = Number(/^-?\d+,\d+$/.test(t) ? t.replace(',', '.') : t);
@@ -154,16 +159,19 @@ function to24h(h: number, meridiem: string | undefined): number {
  * written dates ("5 Mar 2024, 18:02", "Mar 5, 2024, 6:02 PM"). Times without
  * an offset are local. Never hands non-ISO strings to Date.parse.
  */
-function parseDateTime(raw: string): number | null {
-  const s = raw.trim().replace(/^(mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?,?\s+/i, '');
+export function parseDateTime(raw: string): number | null {
+  // iOS writes "9:11 PM" with a narrow no-break space.
+  const s = raw.replace(/[\u00a0\u202f]/g, ' ').trim().replace(/^(mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?,?\s+/i, '');
 
-  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?)?\s*(z|[+-]\d{2}:?\d{2})?$/i.exec(s);
+  const iso = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?)?\s*(z|[+-]\d{2}:?\d{2}|[ap]\.?m\.?)?$/i.exec(s);
   if (iso) {
     const n = (i: number) => Number(iso[i] ?? 0);
-    const [y, mo, d, h, mi, sec] = [n(1), n(2), n(3), n(4), n(5), n(6)];
-    const local = localTime(y, mo, d, h, mi, sec);
+    const [y, mo, d, mi, sec] = [n(1), n(2), n(3), n(5), n(6)];
     const zone = iso[8];
-    if (local === null || !zone) return local;
+    const meridiem = zone && /^[ap]/i.test(zone) ? zone : undefined;
+    const h = to24h(n(4), meridiem);
+    const local = localTime(y, mo, d, h, mi, sec);
+    if (local === null || !zone || meridiem) return local;
     const ms = Number(((iso[7] ?? '') + '000').slice(0, 3));
     const offsetMin = /z/i.test(zone)
       ? 0
@@ -391,9 +399,103 @@ function parseHevy(header: string[], rows: string[][]): ImportResult {
   return out.finish('hevy');
 }
 
+// ---------------------------------------------------------------------------
+// Gravl
+
+/** Gravl's per-set effort rating, as reps in reserve. */
+function rirFromEffort(effort: string): number | undefined {
+  const e = effort.toLowerCase();
+  if (!e) return undefined;
+  if (/too easy/.test(e)) return 4;
+  if (/too hard|fail|max/.test(e)) return 0;
+  if (/easy|light/.test(e)) return 3;
+  if (/hard|tough/.test(e)) return 1;
+  if (/ideal|good|right|perfect|moderate|medium|ok/.test(e)) return 2;
+  return undefined;
+}
+
+function parseGravl(header: string[], rows: string[][], defaultUnit: 'kg' | 'lb'): ImportResult {
+  const keys = header.map(normKey);
+  const col = {
+    date: columnIndex(keys, 'date'),
+    time: columnIndex(keys, 'start date', 'start time'),
+    name: columnIndex(keys, 'workout'),
+    duration: columnByPrefix(keys, 'workout duration'),
+    exercise: columnIndex(keys, 'exercise'),
+    setType: columnIndex(keys, 'set type'),
+    weight: columnByPrefix(keys, 'weight'),
+    reps: columnIndex(keys, 'reps'),
+    distance: columnByPrefix(keys, 'distance'),
+    seconds: columnByPrefix(keys, 'set duration'),
+    effort: columnIndex(keys, 'effort'),
+    rpe: columnIndex(keys, 'rpe'),
+    notes: columnIndex(keys, 'workout notes', 'notes'),
+  };
+  const weightKey = keys[col.weight] ?? '';
+  const unit = /\blbs?\b/.test(weightKey) ? 'lb' : /\bkgs?\b/.test(weightKey) ? 'kg' : defaultUnit;
+  const factor = unit === 'lb' ? LB_TO_KG : 1;
+  const plainDurationMs = /\bsec/.test(keys[col.duration] ?? '') ? 1000 : 60_000;
+  // Gravl marks every set of a drop set "Dropset": the first is the top set, the rest are the drops.
+  const lastType = new Map<string, string>();
+
+  const out = new Collector();
+  for (const row of rows) {
+    const exercise = cell(row, col.exercise);
+    if (!exercise) continue;
+    const dateRaw = cell(row, col.date);
+    const timeRaw = cell(row, col.time);
+    const startedAt = parseDateTime(`${dateRaw} ${timeRaw}`) ?? parseDateTime(dateRaw);
+    if (startedAt === null) {
+      out.badDate();
+      continue;
+    }
+    const name = cell(row, col.name) || 'Imported workout';
+    const key = `${dateRaw}\u0000${timeRaw}\u0000${name}`;
+    const group = out.workout(
+      key,
+      () => {
+        const w: ImportedWorkout = { name, startedAt, exercises: [] };
+        const duration = parseDurationMs(cell(row, col.duration), plainDurationMs);
+        if (duration !== undefined) w.finishedAt = startedAt + duration;
+        return w;
+      },
+      cell(row, col.notes),
+    );
+
+    const type = cell(row, col.setType).toLowerCase();
+    const chain = `${key}\u0000${exercise}`;
+    const continuesDrop = /drop/.test(type) && /drop/.test(lastType.get(chain) ?? '');
+    lastType.set(chain, type);
+    const reps = parseNumber(cell(row, col.reps)) ?? 0;
+    if (reps <= 0) {
+      out.skipRepless(exercise, cell(row, col.distance), cell(row, col.seconds));
+      continue;
+    }
+    const set = makeSet(parseNumber(cell(row, col.weight)), factor, reps, cell(row, col.rpe), /warm/.test(type) ? 'warmup' : 'working');
+    if (set.rir === undefined) {
+      const rir = rirFromEffort(cell(row, col.effort));
+      if (rir !== undefined) set.rir = rir;
+    }
+    if (continuesDrop) set.drop = true;
+    out.addSet(group, exercise, set);
+  }
+  return { ...out.finish('gravl'), bodyweightIncluded: true };
+}
+
+/**
+ * Gravl logs a pull-up at the lifter's bodyweight; Overload logs the load added to it.
+ * Anything under half of bodyweight is taken as added load already.
+ */
+export function addedLoad(kg: number, bodyweightKg: number | undefined): number {
+  if (!bodyweightKg || kg < bodyweightKg * 0.5) return kg;
+  const added = kg - bodyweightKg;
+  // Within 10% is the same bodyweight, weighed on a different day.
+  return added < bodyweightKg * 0.1 ? 0 : added;
+}
+
 /**
  * Parse an export. `strongUnit` is the unit Strong's Weight column is in (Strong exports don't say).
- * @throws Error when the file is empty or is neither a Strong nor a Hevy export.
+ * @throws Error when the file is empty or is not a Gravl, Strong or Hevy export.
  */
 export function parseWorkoutCsv(text: string, opts: { strongUnit?: 'kg' | 'lb' } = {}): ImportResult {
   const [header, ...rows] = parseCsv(text);
@@ -401,7 +503,8 @@ export function parseWorkoutCsv(text: string, opts: { strongUnit?: 'kg' | 'lb' }
   const format = detectFormat(header);
   if (format === 'strong') return parseStrong(header, rows, opts.strongUnit ?? 'kg');
   if (format === 'hevy') return parseHevy(header, rows);
-  throw new Error('Unrecognized file: expected a CSV export from Strong or Hevy.');
+  if (format === 'gravl') return parseGravl(header, rows, opts.strongUnit ?? 'kg');
+  throw new Error("This doesn't look like a workout export from Gravl, Strong or Hevy.");
 }
 
 // ---------------------------------------------------------------------------
@@ -440,12 +543,29 @@ const PHRASES: Array<[RegExp, string]> = [
   [/\bbody ?weight\b/g, 'bodyweight'],
   [/\bresistance band\b/g, 'band'],
   [/\bv bar\b/g, ''],
+  [/\bincline dumbbell row\b/g, 'chest supported dumbbell row'],
 ];
 
 const STOPWORDS = new Set([
   'a', 'an', 'the', 'and', 'with', 'of', 'on', 'to', 'in', 'for',
   'straight', 'bar', 'rope', 'handle', 'attachment', 'flat', 'standard', 'regular', 'conventional', 'exercise',
+  // Stance and side change the setup, not the movement.
+  'seated', 'standing', 'alternating', 'alternate',
 ]);
+
+// Words that make it a different movement: on one side only, it's probably not the same exercise.
+const DEFINING = new Set(['upright', 'incline', 'decline', 'reverse', 'sumo', 'close', 'wide', 'front', 'rear', 'hanging', 'skull', 'preacher', 'spider', 'floor', 'low', 'high', 'hip', 'halo']);
+const DEFINING_PENALTY = 0.3;
+
+function definingMismatch(a: Set<string>, b: Set<string>): number {
+  let n = 0;
+  for (const t of a) if (DEFINING.has(t) && !b.has(t)) n++;
+  for (const t of b) if (DEFINING.has(t) && !a.has(t)) n++;
+  return n;
+}
+
+// "Curl to Press", "Squat to Row": two lifts in one, so no single library match.
+const COMBO = /\b(curl|squat|lunge|deadlift|row|press|raise|clean)s?\b.*\bto\b.*\b(curl|squat|lunge|deadlift|row|press|raise|thruster)s?\b/i;
 
 function singular(w: string): string {
   if (w.length <= 3 || !w.endsWith('s') || /(ss|us|is)$/.test(w)) return w;
@@ -549,6 +669,7 @@ const MIN_SCORE = 0.55;
 
 /** Fuzzy-match an external exercise name to a library exercise id, or null. */
 export function matchExercise(name: string, library: Exercise[]): string | null {
+  if (COMBO.test(name)) return null;
   const ext = tokenize(name);
   const extCore = withoutEquipment(ext);
   if (extCore.size === 0) return null;
@@ -559,7 +680,10 @@ export function matchExercise(name: string, library: Exercise[]): string | null 
   for (const ex of library) {
     const p = profileOf(ex);
     let score = Math.max(
-      ...p.candidates.map((c) => jaccard(extCore, withoutEquipment(c)) + (sameSet(ext, c) ? EXACT_BONUS : 0)),
+      ...p.candidates.map((c) => {
+        const core = withoutEquipment(c);
+        return jaccard(extCore, core) + (sameSet(ext, c) ? EXACT_BONUS : 0) - DEFINING_PENALTY * definingMismatch(extCore, core);
+      }),
     );
     score += equipmentScore(extEquipment, p.equipment);
     // No equipment given: default to the barbell variant ("Squat" → back squat).

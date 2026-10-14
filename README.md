@@ -29,10 +29,11 @@ Overload is inspired by AI-coached gym apps like Gravl, rebuilt in the open: no 
 - **See the week ahead.** Pick the days you train and the Train screen shows the week with each session's type. Tap a day to see its workout: upcoming sessions are forecast by playing your plan forward (recovery, progression and your split's rotation included), rest days say what's next, and past days show what you did. Arrows step through the weeks.
 - **Shows you how.** Every exercise has a short form-demo video, on its page, in the workout preview and one tap from the logger. Prefer a different coach? Paste any YouTube link to swap it, or add one to your custom exercises. Videos play in YouTube's privacy-enhanced mode and only load when you press play; the thumbnails come from YouTube's image server.
 - **Tracks muscle recovery.** An 18-muscle body map shows residual fatigue from lifting *and* from runs, rides, hikes and sport, so leg day doesn't land the morning after a hard trail run.
+- **Syncs with Strava.** Connect Strava and your runs, rides, hikes and swims flow into the recovery model whenever you open the app, with intensity read from your perceived exertion, Relative Effort or heart rate. Weight training and yoga are skipped, since you log lifting here. See [Connecting Strava](#connecting-strava).
 - **Progress you can trust.** Strength score against bodyweight standards, estimated 1RM trends per lift, weekly hard sets per muscle against target ranges, and automatic PR detection.
 - **Works anywhere you train.** Save multiple gyms (home, commercial, hotel, bodyweight) with their equipment and switch with a tap. Includes 125 exercises plus your own custom ones, with swaps that hit the same muscles.
 - **Knows your equipment.** Tell each gym which dumbbells, plates, bars and kettlebells it has, and how its weight stacks step up. Workouts only prescribe loads you can actually make, the plate diagram uses your plates, and when you outgrow your heaviest dumbbell (or the next one up is a big jump) it adds reps or a set instead of asking for a weight you don't have.
-- **Your data is yours.** Stored locally in IndexedDB. One-tap JSON backup/restore, CSV export, and **import from Strong or Hevy** so you keep your history.
+- **Your data is yours.** Stored locally in IndexedDB. One-tap JSON backup/restore, CSV export, and **import from Gravl, Strong or Hevy** so you keep your history (warm-ups, drop sets and effort ratings included). Strava's `activities.csv` imports too.
 - **Optional AI coach.** Bring your own Anthropic API key to chat with a coach that sees your logs. It can build a workout from "30 minutes, hotel gym, my shoulder's sore", diagnose a stalled lift from its history, and log a run you mention. Everything else works without it.
 - **Installable PWA.** Add it to your home screen; it works offline (form videos need a connection).
 - **Try before you commit.** "Explore with sample data" plays a virtual lifter through eight weeks of the real engine so every screen is full on first launch, and "Start fresh" wipes it.
@@ -49,6 +50,18 @@ All of it lives in [`src/engine`](src/engine). It's pure TypeScript with no UI o
 | **Session planning** ([`generator.ts`](src/engine/generator.ts)) | Picks the focus whose muscles score highest on recovery and weekly deficit. Fills anchor slots with big compound patterns first (squat, hinge, push, pull), then accessories by muscle need until the time budget runs out. Exercise choice favors lifts you've been progressing on (continuity is what makes overload work), your favorites, and loadable movements. It avoids recovering, sore or excluded muscles and same-pattern duplicates. Deterministic per day with a re-roll seed. |
 | **Progression** ([`progression.ts`](src/engine/progression.ts)) | Double progression with RIR autoregulation. Every set hits the top of the rep range at the target RIR → add the smallest practical increment (bigger for heavy squats and hinges). Inside the range → same weight, +1 rep. Far below → re-target from your estimated 1RM. No e1RM gain in 3 sessions → planned 10% deload. Back after 3+ weeks → ease in at 80–90%. The first session is seeded conservatively from bodyweight, or from a related lift you've already logged. |
 | **Strength score** ([`analytics.ts`](src/engine/analytics.ts)) | Best e1RM (Epley, counting reps in reserve) for squat, bench, deadlift, overhead press and row, with dumbbell and variation equivalents, divided by bodyweight and mapped to a 0–100 scale through beginner→elite standards. |
+
+## Connecting Strava
+
+Overload has no server, so it talks to Strava straight from your phone using your own free Strava API app:
+
+1. Go to [strava.com/settings/api](https://www.strava.com/settings/api) and create an app. Any name and category will do.
+2. Set **Authorization Callback Domain** to the host the app runs on (for this repo's deploy, `fogz-lgtm.github.io`). Settings → Strava shows the right value with a copy button.
+3. Paste the app's **Client ID** and **Client Secret** into Settings → Strava and tap **Connect with Strava**.
+
+The keys and Strava tokens stay on the device, like the AI key, and are never written into backups. The first sync reaches back 60 days. After that new activities arrive whenever the app opens.
+
+If you use Overload from the iPhone home screen, iOS may finish the Strava sign-in in Safari instead of the app. Safari then shows a code to copy: paste it into Settings → Strava → **Have a code from Strava?**. If Strava ever refuses requests from the browser, import the `activities.csv` from Strava's data download (Settings → Import workouts) instead.
 
 ## How this repo hosts the app
 

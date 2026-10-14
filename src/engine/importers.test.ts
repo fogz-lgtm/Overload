@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { detectFormat, matchExercise, parseCsv, parseWorkoutCsv } from './importers';
+import { EXERCISES } from './exercises';
+import { addedLoad, detectFormat, matchExercise, parseCsv, parseWorkoutCsv } from './importers';
 import type { Equipment, Exercise, Loading, MovementPattern, MuscleId } from './types';
 
 function ex(
@@ -305,10 +306,75 @@ describe('parseWorkoutCsv — Hevy', () => {
   });
 });
 
+describe('parseWorkoutCsv — Gravl', () => {
+  const HEADER =
+    'Date,Start Date,Workout,Source,Workout Duration (min),Energy,Exercise,Superset,Set,Set Type,Reps,Weight (lb),Distance (mi),Set Duration (sec),Incline,Steps,Effort,Workout Notes';
+  const row = (date: string, time: string, name: string, exercise: string, set: number, type: string, reps: number, lb: number, effort: string, seconds = '') =>
+    [date, time, name, '', 40, 250, exercise, 'No', set, type, reps, lb, 0, seconds, '', '', effort, ''].join(',');
+  const NNBSP = ' ';
+  const csv = [
+    '﻿' + HEADER,
+    row('2026/03/04', `6:45${NNBSP}PM`, 'Push', 'Dumbbell Shoulder Press', 1, 'Warmup', 12, 20, 'Easy'),
+    row('2026/03/04', `6:45${NNBSP}PM`, 'Push', 'Dumbbell Shoulder Press', 2, 'Normal', 9, 40, 'Ideal'),
+    row('2026/03/04', `6:45${NNBSP}PM`, 'Push', 'Dumbbell Shoulder Press', 3, 'Normal', 8, 45, 'Hard'),
+    row('2026/03/04', `6:45${NNBSP}PM`, 'Push', 'Dumbbell Lateral Raise', 1, 'Normal', 9, 20, ''),
+    row('2026/03/04', `6:45${NNBSP}PM`, 'Push', 'Dumbbell Lateral Raise', 2, 'Dropset', 9, 20, 'Hard'),
+    row('2026/03/04', `6:45${NNBSP}PM`, 'Push', 'Dumbbell Lateral Raise', 3, 'Dropset', 8, 15, 'Hard'),
+    row('2026/03/04', `6:45${NNBSP}PM`, 'Push', 'Dumbbell Lateral Raise', 4, 'Dropset', 0, 10, 'Hard'),
+    row('2026/03/04', `6:45${NNBSP}PM`, 'Push', 'Side Plank', 1, 'Normal', 0, 0, '', '60'),
+    row('2026/03/05', '7:20 AM', 'Pull', 'Chin Up', 1, 'Normal', 8, 180, 'Ideal'),
+  ].join('\r\n');
+
+  it('recognises the export', () => {
+    expect(detectFormat(HEADER.split(','))).toBe('gravl');
+  });
+
+  it('groups sets into workouts, timed from the start time and duration', () => {
+    const r = parseWorkoutCsv(csv);
+    expect(r.format).toBe('gravl');
+    expect(r.bodyweightIncluded).toBe(true);
+    expect(r.workouts.map((w) => w.name)).toEqual(['Push', 'Pull']);
+    const [push, pull] = r.workouts;
+    expect(push!.startedAt).toBe(new Date(2026, 2, 4, 18, 45).getTime());
+    expect(push!.finishedAt).toBe(push!.startedAt + 40 * 60_000);
+    expect(pull!.startedAt).toBe(new Date(2026, 2, 5, 7, 20).getTime());
+    expect(push!.exercises.map((e) => e.name)).toEqual(['Dumbbell Shoulder Press', 'Dumbbell Lateral Raise']);
+  });
+
+  it('reads pounds, warm-ups and effort', () => {
+    const press = parseWorkoutCsv(csv).workouts[0]!.exercises[0]!;
+    expect(press.sets.map((s) => s.kind)).toEqual(['warmup', 'working', 'working']);
+    expect(press.sets[1]!.weightKg).toBeCloseTo(18.144, 3);
+    expect(press.sets.map((s) => s.rir)).toEqual([3, 2, 1]);
+  });
+
+  it('keeps the top set of a drop set and marks the lighter ones as drops', () => {
+    const raise = parseWorkoutCsv(csv).workouts[0]!.exercises[1]!;
+    expect(raise.sets.map((s) => [s.reps, Math.round(s.weightKg / 0.45359237), !!s.drop])).toEqual([
+      [9, 20, false],
+      [9, 20, false],
+      [8, 15, true],
+    ]);
+    expect(raise.sets[0]!.rir).toBeUndefined();
+  });
+
+  it('takes bodyweight back out of a logged pull-up', () => {
+    expect(addedLoad(76, 76)).toBe(0);
+    expect(addedLoad(76, 80)).toBe(0); // weighed on a different day
+    expect(addedLoad(96, 80)).toBe(16); // a 16 kg plate on the belt
+    expect(addedLoad(10, 80)).toBe(10); // already just the added load
+    expect(addedLoad(76, undefined)).toBe(76);
+  });
+
+  it('warns about timed sets it skips', () => {
+    expect(parseWorkoutCsv(csv).warnings).toEqual(['"Side Plank": timed or distance sets aren\'t supported yet and were skipped.']);
+  });
+});
+
 describe('parseWorkoutCsv — errors', () => {
   it('throws on empty or unrecognised files', () => {
     expect(() => parseWorkoutCsv('')).toThrow(/empty/);
-    expect(() => parseWorkoutCsv('date,distance,pace\n2024-01-01,5,5:00')).toThrow(/Strong or Hevy/);
+    expect(() => parseWorkoutCsv('date,distance,pace\n2024-01-01,5,5:00')).toThrow(/Gravl, Strong or Hevy/);
   });
 });
 
@@ -365,5 +431,29 @@ describe('matchExercise', () => {
     const noDumbbellBench = LIBRARY.filter((e) => e.id !== 'dumbbell-bench-press');
     expect(matchExercise('Bench Press (Dumbbell)', noDumbbellBench)).toBeNull();
     expect(matchExercise('Bench Press (Barbell)', noDumbbellBench)).toBe('barbell-bench-press');
+  });
+});
+
+describe('matchExercise — Gravl names against the library', () => {
+  const name = (n: string) => {
+    const id = matchExercise(n, EXERCISES);
+    return id ? EXERCISES.find((e) => e.id === id)!.name : null;
+  };
+
+  it('ignores stance words', () => {
+    expect(name('Standing Dumbbell Shoulder Press')).toBe('Seated Dumbbell Shoulder Press');
+    expect(name('Dumbbell Lateral Raise Seated')).toBe('Dumbbell Lateral Raise');
+    expect(name('Kettlebell Alternating Row')).toBe('Kettlebell Row');
+  });
+
+  it('knows an incline dumbbell row is chest-supported', () => {
+    expect(name('Incline Dumbbell Row')).toBe('Chest-Supported Dumbbell Row');
+  });
+
+  it('does not stretch to a different movement', () => {
+    expect(name('Dumbbell Upright Row')).toBeNull();
+    expect(name('Dumbbell Incline Fly')).toBeNull();
+    expect(name('Leg Raise')).toBeNull();
+    expect(name('Bicep Curl to Shoulder Press')).toBeNull();
   });
 });

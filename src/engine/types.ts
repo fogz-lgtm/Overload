@@ -132,6 +132,27 @@ export interface Profile {
   /** How sessions are run; anything unset follows the goal's defaults. */
   style?: TrainingStyle;
   ai?: { apiKey: string; model: string };
+  strava?: StravaLink;
+}
+
+/**
+ * The lifter's own Strava API app and the tokens it was granted. Lives only
+ * on this device, like the AI key, and never goes into a backup.
+ */
+export interface StravaLink {
+  clientId: string;
+  clientSecret: string;
+  accessToken?: string;
+  refreshToken?: string;
+  /** When the access token expires, ms. */
+  expiresAt?: number;
+  athlete?: string;
+  lastSyncAt?: number;
+  /** Start of the newest activity synced, ms. */
+  newestAt?: number;
+  lastError?: string;
+  /** Strava activities removed here, so a sync doesn't bring them back. */
+  removed?: string[];
 }
 
 /** Warm-up sets: none, before the first lift, before the main (up to two) heavy lifts, or before every compound. */
@@ -243,6 +264,9 @@ export interface Activity {
   minutes: number;
   intensity: Intensity;
   note?: string;
+  /** Synced from Strava rather than logged here. */
+  source?: 'strava';
+  distanceKm?: number;
 }
 
 export interface ExercisePref {

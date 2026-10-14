@@ -16,6 +16,7 @@ import { goalScheme } from '../engine/progression';
 import type { DropSetPolicy, Equipment, Experience, Goal, Gym, GymWeights, Profile, Sex, Split, TrainingStyle, Units, WarmupPolicy } from '../engine/types';
 import { dayKey, uid } from '../engine/util';
 import { download, formatDate, useProfile } from '../hooks';
+import { beginConnect, callbackDomain, codeFromPaste, disconnectStrava, finishConnect, isConnected, saveStravaApp, STRAVA_APPS_URL, syncStrava } from '../strava/client';
 import { getTheme, setTheme, type ThemePref } from '../theme';
 import { haptics } from '../ui/haptics';
 import { toast } from '../ui/toast';
@@ -86,7 +87,7 @@ const MODELS: { id: string; name: string; note: string }[] = [
   { id: 'claude-haiku-5-5', name: 'Claude Haiku 5.5', note: 'Cheapest' },
 ];
 
-const FORMAT_LABEL: Record<string, string> = { strong: 'Strong', hevy: 'Hevy' };
+const FORMAT_LABEL: Record<string, string> = { gravl: 'Gravl', strong: 'Strong', hevy: 'Hevy', strava: 'Strava' };
 const MAX_WARNINGS = 20;
 const SOURCE_URL = 'https://github.com/fogz-lgtm/Overload';
 const KEYS_URL = 'https://console.anthropic.com/settings/keys';
@@ -95,7 +96,7 @@ const KEYS_URL = 'https://console.anthropic.com/settings/keys';
 
 const titleOf = <T,>(options: Option<T>[], value: T) => options.find((o) => o.value === value)?.title ?? String(value);
 const modelName = (id: string) => MODELS.find((m) => m.id === id)?.name ?? id;
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const plural = (n: number, word: string, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
 
 function splitText(days: number, split: Split | undefined): string {
   if (split?.days.length) return splitCadence(split.days.length, days);
@@ -288,7 +289,7 @@ function InlineError({ text }: { text: string | null }) {
 
 // ── Page ───────────────────────────────────────────────────────────────────
 
-type Panel = 'profile' | 'goal' | 'experience' | 'days' | 'split' | 'length' | 'units' | 'rest' | 'warmups' | 'drops' | 'effort' | 'ai' | 'fresh';
+type Panel = 'profile' | 'goal' | 'experience' | 'days' | 'split' | 'length' | 'units' | 'rest' | 'warmups' | 'drops' | 'effort' | 'ai' | 'strava' | 'fresh';
 
 export function Settings() {
   const profile = useProfile();
@@ -397,6 +398,12 @@ export function Settings() {
       </Section>
 
       <GymsSection activeGymId={profile.activeGymId} units={profile.units} />
+
+      <Section title="Connections">
+        <div className="group">
+          <Row icon="run" label="Strava" sub={<StravaStatus profile={profile} />} onClick={() => setPanel('strava')} />
+        </div>
+      </Section>
 
       <Section title="AI coach">
         <div className="group">
@@ -525,6 +532,7 @@ export function Settings() {
         </Sheet>
       )}
       {panel === 'ai' && <AiSheet profile={profile} onClose={close} />}
+      {panel === 'strava' && <StravaSheet profile={profile} onClose={close} />}
       {panel === 'fresh' && (
         <Sheet open onClose={close} title="Start fresh?" subtitle="Clears the sample data and takes you to setup.">
           <div className="stack lg">
@@ -1034,6 +1042,235 @@ function AiSheet({ profile, onClose }: { profile: Profile; onClose: () => void }
   );
 }
 
+// ── Strava ─────────────────────────────────────────────────────────────────
+
+function agoText(t: number, now = Date.now()): string {
+  const min = Math.round((now - t) / 60_000);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min} min ago`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `${h} h ago`;
+  return formatDate(t, { month: 'short', day: 'numeric' });
+}
+
+function StravaStatus({ profile }: { profile: Profile }) {
+  const link = profile.strava;
+  if (!isConnected(link)) return <span className="set-status">Sync runs and rides into recovery</span>;
+  if (link.lastError) return <span className="set-status set-warn">Needs a look · {link.athlete ?? 'connected'}</span>;
+  return (
+    <span className="set-status on">
+      {link.athlete ? `${link.athlete} · ` : 'Connected · '}
+      {link.lastSyncAt ? `synced ${agoText(link.lastSyncAt)}` : 'not synced yet'}
+    </span>
+  );
+}
+
+function StravaSheet({ profile, onClose }: { profile: Profile; onClose: () => void }) {
+  const link = profile.strava;
+  return (
+    <Sheet open onClose={onClose} title="Strava" subtitle="Runs, rides and hikes count toward recovery, so leg day waits when your legs are tired.">
+      {isConnected(link) ? <StravaConnected link={link} /> : <StravaSetup clientId={link?.clientId ?? ''} clientSecret={link?.clientSecret ?? ''} />}
+    </Sheet>
+  );
+}
+
+function StravaConnected({ link }: { link: NonNullable<Profile['strava']> }) {
+  const [busy, setBusy] = useState(false);
+  const count = useLiveQuery(() => db.activities.filter((a) => a.source === 'strava').count(), []);
+
+  const sync = async () => {
+    setBusy(true);
+    try {
+      const { added } = await syncStrava();
+      haptics.success();
+      toast(added ? `${plural(added, 'new activity', 'new activities')} from Strava` : 'Up to date with Strava', { icon: 'check', tone: 'accent' });
+    } catch {
+      // Saved on the link and shown below.
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disconnect = async () => {
+    await disconnectStrava(false);
+    toast('Strava disconnected', { icon: 'check' });
+  };
+
+  return (
+    <div className="stack lg">
+      <div className="set-file">
+        <span className="row-icon set-strava-icon">
+          <Icon name="run" size={17} />
+        </span>
+        <span className="grow">
+          <span className="set-row-label truncate">{link.athlete ?? 'Connected'}</span>
+          <span className="set-row-sub num">
+            {link.lastSyncAt ? `Synced ${agoText(link.lastSyncAt)}` : 'Not synced yet'}
+            {count !== undefined && ` · ${plural(count, 'activity', 'activities')}`}
+          </span>
+        </span>
+      </div>
+      <InlineError text={link.lastError ?? null} />
+      <p className="muted small">
+        New activities sync when you open Overload. Weight training and yoga are skipped, since you log lifting here.
+      </p>
+      <div className="stack">
+        <button type="button" className="btn primary block lg" disabled={busy} onClick={() => void sync()}>
+          {busy ? (
+            <>
+              <span className="set-spinner" aria-hidden="true" />
+              Syncing…
+            </>
+          ) : (
+            <>
+              <Icon name="refresh" size={18} />
+              Sync now
+            </>
+          )}
+        </button>
+        <ConfirmButton label="Disconnect" armedLabel="Tap again to disconnect" onConfirm={() => void disconnect()} />
+        <p className="faint small set-center">Synced activities stay in your history.</p>
+      </div>
+    </div>
+  );
+}
+
+function StravaSetup({ clientId: savedId, clientSecret: savedSecret }: { clientId: string; clientSecret: string }) {
+  const idId = useId();
+  const secretId = useId();
+  const codeId = useId();
+  const [clientId, setClientId] = useState(savedId);
+  const [secret, setSecret] = useState(savedSecret);
+  const [show, setShow] = useState(false);
+  const [pasting, setPasting] = useState(false);
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const domain = callbackDomain();
+  const id = clientId.trim();
+  const sec = secret.trim();
+  const ready = /^\d+$/.test(id) && sec.length >= 20;
+
+  const connect = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!ready) return;
+    setError(null);
+    await saveStravaApp(id, sec);
+    beginConnect(id);
+  };
+
+  const finish = async () => {
+    const c = codeFromPaste(code);
+    if (!c) {
+      setError("That doesn't look like a Strava code. Paste the whole address Strava sent you to, or just the code in it.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      if (ready) await saveStravaApp(id, sec);
+      const { athlete, added } = await finishConnect(c);
+      haptics.success();
+      toast(`Connected${athlete ? ` as ${athlete}` : ''} · ${plural(added, 'activity', 'activities')}`, { icon: 'check', tone: 'accent' });
+    } catch (err) {
+      setError(errorText(err));
+      setBusy(false);
+    }
+  };
+
+  const copyDomain = async () => {
+    try {
+      await navigator.clipboard.writeText(domain);
+      toast('Copied', { icon: 'check' });
+    } catch {
+      // Clipboard blocked; the text is selectable.
+    }
+  };
+
+  return (
+    <form className="stack lg" onSubmit={connect}>
+      <div className="set-privacy">
+        <Icon name="shield" size={20} />
+        <p className="small">
+          Overload talks to Strava straight from this device through your own free Strava API app. Its keys and your sign-in stay here and are sent only to{' '}
+          <span className="set-mono">strava.com</span>.
+        </p>
+      </div>
+
+      <ol className="set-steps small muted">
+        <li>
+          <a className="set-link-inline" href={STRAVA_APPS_URL} target="_blank" rel="noopener noreferrer">
+            Create an app on Strava
+          </a>{' '}
+          (takes two minutes). Any name and category will do; for the website, use this app's address.
+        </li>
+        <li>
+          Set <strong>Authorization Callback Domain</strong> to{' '}
+          <button type="button" className="set-copy set-mono" onClick={() => void copyDomain()}>
+            {domain}
+            <Icon name="copy" size={13} />
+          </button>
+        </li>
+        <li>Copy the app's Client ID and Client Secret here, then connect.</li>
+      </ol>
+
+      <div className="field">
+        <label htmlFor={idId}>Client ID</label>
+        <input id={idId} className="input set-mono" inputMode="numeric" autoComplete="off" value={clientId} placeholder="12345" onChange={(e) => setClientId(e.target.value)} />
+      </div>
+      <div className="field">
+        <label htmlFor={secretId}>Client Secret</label>
+        <span className="set-key">
+          <input
+            id={secretId}
+            className="input set-mono"
+            type={show ? 'text' : 'password'}
+            value={secret}
+            autoComplete="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            onChange={(e) => setSecret(e.target.value)}
+          />
+          <button type="button" className="set-key-toggle" aria-pressed={show} aria-label={show ? 'Hide secret' : 'Show secret'} onClick={() => setShow((s) => !s)}>
+            <Icon name={show ? 'eyeOff' : 'eye'} size={18} />
+          </button>
+        </span>
+      </div>
+
+      <InlineError text={error} />
+
+      <div className="stack">
+        <button type="submit" className="btn primary block lg set-strava-btn" disabled={!ready || busy}>
+          <Icon name="external" size={18} />
+          Connect with Strava
+        </button>
+        {!pasting ? (
+          <button type="button" className="btn ghost block" onClick={() => setPasting(true)}>
+            Have a code from Strava?
+          </button>
+        ) : (
+          <div className="field">
+            <label htmlFor={codeId}>Code from Strava</label>
+            <input
+              id={codeId}
+              className="input set-mono"
+              autoComplete="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              placeholder="Paste the code or the whole address"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+            />
+            <button type="button" className="btn block" disabled={busy || !code.trim()} onClick={() => void finish()}>
+              {busy ? 'Connecting…' : 'Finish connecting'}
+            </button>
+          </div>
+        )}
+      </div>
+    </form>
+  );
+}
+
 // ── Appearance ─────────────────────────────────────────────────────────────
 
 function AppearanceSection() {
@@ -1137,7 +1374,7 @@ function DataSection({ units }: { units: Units }) {
           onClick={() => void exportFile('csv')}
         />
         <Row icon="upload" label="Restore backup" sub="Replace this device's data with a backup" trail="none" onClick={() => restoreRef.current?.click()} />
-        <Row icon="repeat" label="Import from Strong or Hevy" sub="Bring in your workout history" onClick={() => setImporting(true)} />
+        <Row icon="repeat" label="Import workouts" sub="Gravl, Strong or Hevy history" onClick={() => setImporting(true)} />
       </div>
       <input ref={restoreRef} type="file" accept=".json,application/json" hidden onChange={onRestoreFile} />
       <InlineError text={error} />
@@ -1208,7 +1445,8 @@ function ImportSheet({ defaultUnit, onClose }: { defaultUnit: Units; onClose: ()
       const result = await importWorkoutCsv(await file.text(), unit);
       setSummary(result);
       haptics.success();
-      toast(`Imported ${plural(result.imported, 'workout')}`, { icon: 'check', tone: 'accent' });
+      const what = result.format === 'strava' ? plural(result.imported, 'activity', 'activities') : plural(result.imported, 'workout');
+      toast(result.imported ? `Imported ${what}` : 'Nothing new: already imported', { icon: 'check', tone: 'accent' });
     } catch (err) {
       setError(`Couldn't import: ${errorText(err)}`);
     } finally {
@@ -1225,12 +1463,17 @@ function ImportSheet({ defaultUnit, onClose }: { defaultUnit: Units; onClose: ()
   }
 
   return (
-    <Sheet open onClose={onClose} title="Import workouts" subtitle="From a Strong or Hevy CSV export.">
+    <Sheet open onClose={onClose} title="Import workouts" subtitle="Bring your history from Gravl, Strong or Hevy.">
       <div className="stack lg">
         <ol className="set-steps small muted">
-          <li>In Strong or Hevy, export your workout data as CSV.</li>
-          <li>Choose the file here. Re-importing the same file is safe; duplicates are skipped.</li>
+          <li>In Gravl, Strong or Hevy, export your workouts as a CSV file. It's in each app's settings.</li>
+          <li>Choose the file here. Overload works out which app it came from.</li>
+          <li>Re-importing is safe: workouts already here are skipped.</li>
         </ol>
+        <p className="faint small">
+          Cardio from Strava works too: the <span className="set-mono">activities.csv</span> in your Strava data download. Or connect Strava under
+          Connections to sync it automatically.
+        </p>
         <div className="field">
           <span>Strong exports weights in</span>
           <Segmented
@@ -1242,7 +1485,7 @@ function ImportSheet({ defaultUnit, onClose }: { defaultUnit: Units; onClose: ()
             ]}
             onChange={setUnit}
           />
-          <small className="small faint">Strong files don't say which unit they use. Hevy files do, so this is ignored for them.</small>
+          <small className="small faint">Only Strong files leave the unit out. Gravl and Hevy files say, so this is ignored for them.</small>
         </div>
         <InlineError text={error} />
         <button type="button" className="btn primary block lg" disabled={busy} onClick={() => fileRef.current?.click()}>
@@ -1266,21 +1509,24 @@ function ImportSheet({ defaultUnit, onClose }: { defaultUnit: Units; onClose: ()
 
 function ImportSummary({ summary }: { summary: CsvImportSummary }) {
   const { imported, skipped, newExercises, warnings } = summary;
+  const cardio = summary.format === 'strava';
   return (
     <div className="stack lg">
       <div className="stats set-stats">
         <div className="stat">
           <span className="value accent-text">{imported}</span>
-          <span className="label">imported</span>
+          <span className="label">{cardio ? 'activities' : 'imported'}</span>
         </div>
         <div className="stat">
           <span className="value">{skipped}</span>
           <span className="label">already here</span>
         </div>
-        <div className="stat">
-          <span className="value">{newExercises.length}</span>
-          <span className="label">new exercises</span>
-        </div>
+        {!cardio && (
+          <div className="stat">
+            <span className="value">{newExercises.length}</span>
+            <span className="label">new exercises</span>
+          </div>
+        )}
       </div>
 
       {newExercises.length > 0 && (
