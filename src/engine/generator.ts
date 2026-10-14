@@ -128,6 +128,8 @@ export function muscleFrequency(m: MuscleId, profile: Pick<Profile, 'daysPerWeek
 }
 
 const LARGE = new Set<MuscleId>(['quads', 'glutes', 'hamstrings', 'chest', 'lats', 'upper_back']);
+/** Small muscles that compounds only half-train: on days built for them they get an exercise of their own. */
+const DIRECT = new Set<MuscleId>(['triceps', 'biceps', 'side_delts', 'rear_delts']);
 const LOADABLE = new Set<Equipment>(['barbell', 'dumbbells', 'kettlebells', 'cable', 'machines', 'leg_press', 'smith_machine']);
 
 interface Slot {
@@ -305,6 +307,10 @@ export function scoreExercise(
     else if (input.recovery[m] < 0.4) score -= 1;
   }
   if (ex.primary.length === 1 && ex.primary[0] === muscle) score += 0.5;
+  // A sumo squat trains adductors first: a weaker pick when the target is quads.
+  if (ex.primary[0] !== muscle) score -= 1;
+  // Big muscles grow best from lifts you can keep loading for years.
+  if (preferCompound && ((ex.loading === 'barbell' && !ex.equipment.includes('smith_machine')) || ex.loading === 'machine')) score += 0.75;
   // Loadable exercises progress more predictably than bodyweight or bands,
   // so only fall back to those when the gym has nothing better.
   const weighted = ex.loading !== 'bodyweight' && ex.loading !== 'band';
@@ -445,6 +451,8 @@ export function generateWorkout(input: GenerateInput): GeneratedWorkout {
   );
 
   const planned = new Map<MuscleId, number>();
+  /** Sets where the muscle is a primary mover, not spill-over. */
+  const directSets = new Map<MuscleId, number>();
   const chosen: Exercise[] = [];
   const setsFor = new Map<string, number>();
   let budgetSec = Math.max(10, minutes - 5) * 60;
@@ -457,7 +465,10 @@ export function generateWorkout(input: GenerateInput): GeneratedWorkout {
     budgetSec -= sets * setTime(rest) + warmupCost(pick);
     chosen.push(pick);
     setsFor.set(pick.id, sets);
-    for (const m of pick.primary) planned.set(m, (planned.get(m) ?? 0) + sets);
+    for (const m of pick.primary) {
+      planned.set(m, (planned.get(m) ?? 0) + sets);
+      directSets.set(m, (directSets.get(m) ?? 0) + sets);
+    }
     for (const m of pick.secondary) planned.set(m, (planned.get(m) ?? 0) + sets / 2);
   };
 
@@ -495,13 +506,17 @@ export function generateWorkout(input: GenerateInput): GeneratedWorkout {
     add(pick, sets);
   }
 
+  const fill = () => {
   while (chosen.length < maxExercises) {
     // The muscle furthest from its session target, weighted toward big, fresh muscles.
     let muscle: MuscleId | undefined;
     let bestGap = 0;
     for (const [m, target] of need) {
-      const gap = (target - (planned.get(m) ?? 0)) / target;
-      if (target - (planned.get(m) ?? 0) < 1) continue;
+      const left = target - (planned.get(m) ?? 0);
+      const wantsDirect = DIRECT.has(m) && !directSets.get(m);
+      if (left < 1 && !wantsDirect) continue;
+      // Once the big lifts are in, the small muscles still waiting on their own exercise go next.
+      const gap = wantsDirect ? 1 : left / target;
       const priority = LARGE.has(m) ? 1.3 : PRIORITY_MUSCLES.includes(m) ? 1 : 0.45;
       const weight = gap * priority * (0.5 + input.recovery[m] / 2);
       if (weight > bestGap) {
@@ -540,7 +555,10 @@ export function generateWorkout(input: GenerateInput): GeneratedWorkout {
       if (extra * setTime(rest) > budgetSec + 150) break;
       budgetSec -= extra * setTime(rest);
       setsFor.set(twin.id, have + extra);
-      for (const m of twin.primary) planned.set(m, (planned.get(m) ?? 0) + extra);
+      for (const m of twin.primary) {
+        planned.set(m, (planned.get(m) ?? 0) + extra);
+        directSets.set(m, (directSets.get(m) ?? 0) + extra);
+      }
       for (const m of twin.secondary) planned.set(m, (planned.get(m) ?? 0) + extra / 2);
       continue;
     }
@@ -551,10 +569,42 @@ export function generateWorkout(input: GenerateInput): GeneratedWorkout {
     if (sets * setTime(rest) + warmupCost(pick) > budgetSec + 150 && chosen.length >= 2) break;
     add(pick, sets);
   }
+  };
+  fill();
+  // Time left over once every target is met: push targets toward the weekly ceiling and fill again,
+  // so a long session isn't cut short.
+  for (let pass = 0; pass < 3 && budgetSec > 6 * 60 && chosen.length < maxExercises; pass++) {
+    let raised = false;
+    for (const [m, target] of need) {
+      const room = weeklySetTarget(m, profile.goal).max - input.weekly[m];
+      const next = Math.max(target, Math.min(Math.ceil(target * 1.5), LARGE.has(m) ? 12 : 9, room));
+      if (next > target) raised = true;
+      need.set(m, next);
+    }
+    if (!raised) break;
+    fill();
+  }
+  // Still time on the clock with a full exercise list: an extra set on the lifts with room to grow.
+  for (let more = true; more && budgetSec > 2 * 60; ) {
+    more = false;
+    for (const ex of chosen) {
+      const have = setsFor.get(ex.id)!;
+      const rest = ex.mechanic === 'compound' ? scheme.restCompound : scheme.restIsolation;
+      const room = ex.primary.every((m) => (planned.get(m) ?? 0) + 1 <= weeklySetTarget(m, profile.goal).max - input.weekly[m]);
+      if (have >= 4 || !room || setTime(rest) > budgetSec + 60) continue;
+      budgetSec -= setTime(rest);
+      setsFor.set(ex.id, have + 1);
+      for (const m of ex.primary) planned.set(m, (planned.get(m) ?? 0) + 1);
+      for (const m of ex.secondary) planned.set(m, (planned.get(m) ?? 0) + 0.5);
+      more = true;
+      if (budgetSec <= 2 * 60) break;
+    }
+  }
 
-  // Heavy, technical compounds first; core work last.
+  // The day's lead lift first, then heavy, technical compounds; core work last.
+  const lead0 = chosen[0];
   const order = (e: Exercise) =>
-    (e.pattern === 'core' || e.pattern === 'carry' ? 100 : 0) + (e.mechanic === 'compound' ? 0 : 10) - e.fatigue;
+    (e === lead0 && e.mechanic === 'compound' ? -100 : 0) + (e.pattern === 'core' || e.pattern === 'carry' ? 100 : 0) + (e.mechanic === 'compound' ? 0 : 10) - e.fatigue;
   chosen.sort((a, b) => order(a) - order(b));
 
   let warmups = 0;

@@ -73,7 +73,8 @@
   gap: 6px;
   margin-top: 10px;
 }
-.today-meta span {
+.today-meta > span,
+.today-meta-btn {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -391,4 +392,57 @@
   align-items: center;
   gap: 12px;
   padding: 14px 16px;
+}
+
+.today-meta-btn {
+  color: inherit;
+  cursor: pointer;
+  transition: background var(--d2), border-color var(--d2);
+}
+.today-meta-btn svg:last-child {
+  color: var(--text-3);
+}
+.today-meta-btn[aria-expanded='true'] {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+.today-time {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  animation: fade var(--d2) var(--ease) backwards;
+}
+.today-time dl {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.today-time dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.today-time dt {
+  color: var(--text-1);
+}
+.today-time dt span {
+  color: var(--text-3);
+}
+.today-time dd {
+  margin: 0;
+  font-weight: 650;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.today-time-total {
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+  font-weight: 700;
+}
+.today-time p {
+  margin-top: 10px;
+  line-height: 1.45;
 }

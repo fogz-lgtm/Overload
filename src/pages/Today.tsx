@@ -411,6 +411,7 @@ function PlanCard({
   const [preview, setPreview] = useState<WorkoutExercise | null>(null);
   const [swapFor, setSwapFor] = useState<WorkoutExercise | null>(null);
   const [whyOpen, setWhyOpen] = useState(false);
+  const [timeOpen, setTimeOpen] = useState(false);
 
   if (!plan) {
     return (
@@ -454,9 +455,7 @@ function PlanCard({
       </button>
 
       <div className="today-meta">
-        <span>
-          <Icon name="clock" size={16} /> {plan.estimatedMinutes} min
-        </span>
+        <TimePill minutes={plan.estimatedMinutes} open={timeOpen} onToggle={() => setTimeOpen(!timeOpen)} />
         <span>
           <Icon name="layers" size={16} /> {plan.exercises.length} exercises
         </span>
@@ -464,6 +463,7 @@ function PlanCard({
           <Icon name="bolt" size={16} /> {sets} sets
         </span>
       </div>
+      {timeOpen && <TimeBreakdown minutes={plan.estimatedMinutes} exercises={plan.exercises} sessionMinutes={profile.sessionMinutes} />}
 
       {plan.summary && (
         <button type="button" className={`today-why${whyOpen ? ' open' : ''}`} onClick={() => setWhyOpen(!whyOpen)} aria-expanded={whyOpen}>
@@ -759,6 +759,73 @@ function LastWorkout({
   );
 }
 
+// ── Session time ───────────────────────────────────────────────────────────
+
+/** 75 s, 1½ min, 2 min. */
+function restText(sec: number): string {
+  if (sec < 85) return `${Math.round(sec / 5) * 5} s`;
+  const half = Math.round(sec / 30) / 2;
+  return `${Number.isInteger(half) ? half : `${Math.floor(half)}½`} min`;
+}
+
+function TimePill({ minutes, open, onToggle }: { minutes: number; open: boolean; onToggle: () => void }) {
+  return (
+    <button type="button" className="today-meta-btn" aria-expanded={open} onClick={onToggle}>
+      <Icon name="clock" size={16} /> {minutes} min
+      <span className="sr-only">, how that adds up</span>
+      <Icon name="info" size={13} />
+    </button>
+  );
+}
+
+/** Where the minutes go: working sets with their rests, warm-ups, setting up. */
+function TimeBreakdown({ minutes, exercises, sessionMinutes }: { minutes: number; exercises: WorkoutExercise[]; sessionMinutes: number }) {
+  let working = 0;
+  let warm = 0;
+  let rest = 0;
+  for (const we of exercises) {
+    for (const s of we.sets) {
+      if (s.kind === 'warmup') warm++;
+      else {
+        working++;
+        rest += we.restSec;
+      }
+    }
+  }
+  const avgRest = working ? rest / working : 0;
+  const setMin = Math.round(((40 + avgRest) * working) / 60);
+  return (
+    <div className="today-time small" role="note">
+      <dl>
+        <div>
+          <dt>
+            {working} working sets
+            <span> · ~40 s each + {restText(avgRest)} rest</span>
+          </dt>
+          <dd className="num">{setMin} min</dd>
+        </div>
+        {warm > 0 && (
+          <div>
+            <dt>{warm} warm-up sets</dt>
+            <dd className="num">{warm} min</dd>
+          </div>
+        )}
+        <div>
+          <dt>Getting set up</dt>
+          <dd className="num">5 min</dd>
+        </div>
+        <div className="today-time-total">
+          <dt>About</dt>
+          <dd className="num">{minutes} min</dd>
+        </div>
+      </dl>
+      <p className="faint">
+        Rest is most of it: longer rests between hard sets build more muscle. Built to fit your {sessionMinutes}-minute sessions; change that in Settings, or use Customize for a one-off.
+      </p>
+    </div>
+  );
+}
+
 // ── Other days ─────────────────────────────────────────────────────────────
 
 /** "Today", "Tomorrow", "Yesterday", else "Thursday, Jun 4". */
@@ -839,6 +906,7 @@ function UpcomingCard({
   onStart?: () => void;
 }) {
   const w = entry.workout;
+  const [timeOpen, setTimeOpen] = useState(false);
   const [kind, muscles] = splitName(w.name);
   const focus = planMuscles(w, exercises);
   const sets = w.exercises.reduce((a, we) => a + we.sets.filter((s) => s.kind === 'working').length, 0);
@@ -856,9 +924,7 @@ function UpcomingCard({
       </div>
 
       <div className="today-meta">
-        <span>
-          <Icon name="clock" size={16} /> {w.estimatedMinutes} min
-        </span>
+        <TimePill minutes={w.estimatedMinutes} open={timeOpen} onToggle={() => setTimeOpen(!timeOpen)} />
         <span>
           <Icon name="layers" size={16} /> {w.exercises.length} exercises
         </span>
@@ -866,6 +932,7 @@ function UpcomingCard({
           <Icon name="bolt" size={16} /> {sets} sets
         </span>
       </div>
+      {timeOpen && <TimeBreakdown minutes={w.estimatedMinutes} exercises={w.exercises} sessionMinutes={profile.sessionMinutes} />}
 
       <ol className="today-list">
         {w.exercises.map((we, i) => {

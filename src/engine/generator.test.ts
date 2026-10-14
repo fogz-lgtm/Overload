@@ -119,6 +119,29 @@ describe('generateWorkout', () => {
     expect(w.estimatedMinutes).toBeLessThanOrEqual(35);
   });
 
+  it('fills the session length it is given', () => {
+    for (const minutes of [30, 45, 60]) {
+      const w = generateWorkout(input({ focus: 'push', minutes, equipment: ['dumbbells', 'bench'] }));
+      expect(w.estimatedMinutes, `${minutes} min`).toBeGreaterThanOrEqual(minutes - 8);
+      expect(w.estimatedMinutes, `${minutes} min`).toBeLessThanOrEqual(minutes + 5);
+    }
+  });
+
+  it('gives arms and delts their own work on the days built for them', () => {
+    const push = generateWorkout(input({ focus: 'push', minutes: 50, equipment: ['dumbbells', 'bench'] }));
+    expect(push.exercises.some((we) => exOf(we.exerciseId).primary.includes('triceps'))).toBe(true);
+    expect(push.exercises.some((we) => exOf(we.exerciseId).primary.includes('side_delts') && exOf(we.exerciseId).mechanic === 'isolation')).toBe(true);
+    const pull = generateWorkout(input({ focus: 'pull', minutes: 50 }));
+    expect(pull.exercises.some((we) => exOf(we.exerciseId).primary.includes('biceps'))).toBe(true);
+  });
+
+  it('leads leg day with a squat that trains quads first', () => {
+    for (let seed = 0; seed < 20; seed++) {
+      const w = generateWorkout(input({ focus: 'legs', seed }));
+      expect(exOf(w.exercises[0]!.exerciseId).primary[0], `seed ${seed}`).toBe('quads');
+    }
+  });
+
   it('suggests swaps that hit the same muscles', () => {
     const opts = swapOptions(exOf('barbell-bench-press'), input(), ['barbell-bench-press']);
     expect(opts.length).toBeGreaterThan(2);

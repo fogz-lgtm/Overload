@@ -562,14 +562,25 @@ function DaysSheet({ days, split, onClose }: { days: number[]; split: Split | un
 function LengthSheet({ minutes, onClose }: { minutes: number; onClose: () => void }) {
   const [value, setValue] = useState(minutes);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(timer.current), []);
+  const pending = useRef<number | null>(null);
+  // Today's plan is rebuilt to the new length once the slider settles, or when the sheet closes.
+  const flush = useCallback(() => {
+    clearTimeout(timer.current);
+    const v = pending.current;
+    if (v === null) return;
+    pending.current = null;
+    void refreshPlan();
+    toast(`Sessions set to ${v} min`, { icon: 'check', tone: 'accent' });
+  }, []);
+  useEffect(() => flush, [flush]);
   const pct = ((value - 20) / (90 - 20)) * 100;
 
   const change = (v: number) => {
     setValue(v);
     void db.profile.update('me', { sessionMinutes: v });
+    pending.current = v;
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => toast(`Sessions set to ${v} min`, { icon: 'check', tone: 'accent' }), 700);
+    timer.current = setTimeout(flush, 700);
   };
 
   return (
