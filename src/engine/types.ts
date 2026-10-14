@@ -133,6 +133,17 @@ export interface Profile {
   style?: TrainingStyle;
   ai?: { apiKey: string; model: string };
   strava?: StravaLink;
+  /** Changes the lifter made to upcoming sessions, by day ("2026-10-14"). Re-applied whenever a day is rebuilt. */
+  dayEdits?: Record<string, DayEdit>;
+}
+
+/** The lifter's changes to one day's session. */
+export interface DayEdit {
+  /** Set when the session was re-rolled: a fresh seed, steering away from the exercises it replaced. */
+  seed?: number;
+  avoid?: string[];
+  /** Exercises swapped out (`to` null: removed), in the order they were made. */
+  swaps?: { from: string; to: string | null }[];
 }
 
 /**

@@ -3,6 +3,7 @@ import { warmupSets } from './load';
 import { MUSCLES, PRIORITY_MUSCLES, weeklySetTarget } from './muscles';
 import { DROP, prescribe, schemeFor, takesDropSet, type Prescription } from './progression';
 import type {
+  DayEdit,
   DayType,
   Equipment,
   Exercise,
@@ -206,6 +207,8 @@ export interface GenerateInput {
   weights?: GymWeights;
   /** Change to get a different (but equally valid) workout. */
   seed?: number;
+  /** Exercises to steer away from, for a workout that's actually different. */
+  avoidExercises?: string[];
 }
 
 export interface GeneratedWorkout {
@@ -325,6 +328,8 @@ export function scoreExercise(
   if (chosen.some((c) => c.pattern === ex.pattern && c.primary.some((m) => ex.primary.includes(m)))) score -= 4;
   else if (chosen.some((c) => c.pattern === ex.pattern)) score -= 1.5;
   score -= 0.4 * ex.fatigue * (chosen.length / 3);
+  // Outweighs continuity, so a re-roll changes what it can; still picked when nothing else fits.
+  if (input.avoidExercises?.includes(ex.id)) score -= 6;
   score += ctx.rand() * 1.5;
   return score;
 }
@@ -701,3 +706,55 @@ export function swapOptions(
     .map((x) => x.e);
 }
 
+/**
+ * Records a swap on a day's edits. Swapping an exercise that was itself
+ * swapped in rewrites the original swap, and swapping back cancels it.
+ */
+export function recordSwap(edit: DayEdit | undefined, from: string, to: string | null): DayEdit {
+  const swaps = [...(edit?.swaps ?? [])];
+  const i = swaps.findIndex((s) => s.to === from);
+  if (i >= 0) {
+    const original = swaps[i]!.from;
+    if (original === to) swaps.splice(i, 1);
+    else swaps[i] = { from: original, to };
+  } else if (from !== to) {
+    swaps.push({ from, to });
+  }
+  return { ...edit, swaps };
+}
+
+/** Exercise ids of a session, for steering a re-roll away from them. */
+export const exerciseIds = (exercises: Pick<WorkoutExercise, 'exerciseId'>[]) => [...new Set(exercises.map((e) => e.exerciseId))];
+
+/**
+ * Applies the lifter's swaps to a freshly built session. A swap whose
+ * exercise isn't in the session any more (the plan moved on) is skipped, as
+ * is one whose replacement this gym can't do. The replacement keeps the
+ * original's working-set count and warm-up.
+ */
+export function applyDayEdit(gen: GeneratedWorkout, edit: DayEdit | undefined, input: GenerateInput): GeneratedWorkout {
+  if (!edit?.swaps?.length) return gen;
+  const byId = new Map(input.exercises.map((e) => [e.id, e]));
+  let exercises = gen.exercises;
+  for (const { from, to } of edit.swaps) {
+    const i = exercises.findIndex((we) => we.exerciseId === from);
+    if (i < 0) continue;
+    if (to === null) {
+      if (exercises.length > 1) exercises = exercises.filter((_, j) => j !== i);
+      continue;
+    }
+    const ex = byId.get(to);
+    if (!ex || !isAvailable(ex, input.equipment) || exercises.some((we) => we.exerciseId === to)) continue;
+    const old = exercises[i]!;
+    const sets = old.sets.filter((s) => s.kind === 'working' && !s.drop).length || 3;
+    const replacement = planExercise(ex, input, sets, old.sets.some((s) => s.kind === 'warmup'));
+    exercises = exercises.map((we, j) => (j === i ? replacement : we));
+  }
+  return exercises === gen.exercises ? gen : { ...gen, exercises, estimatedMinutes: estimateMinutes(exercises) };
+}
+
+/** Generation input for a day, with that day's re-roll applied. */
+export function withDayEdit(input: GenerateInput, edit: DayEdit | undefined): GenerateInput {
+  if (!edit?.seed) return input;
+  return { ...input, seed: input.seed ?? edit.seed, avoidExercises: [...(input.avoidExercises ?? []), ...(edit.avoid ?? [])] };
+}

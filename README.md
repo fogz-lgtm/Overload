@@ -22,6 +22,7 @@ Overload is inspired by AI-coached gym apps like Gravl, rebuilt in the open: no 
 ## What it does
 
 - **Builds today's workout for you.** Picks a focus (full body, upper/lower or push/pull/legs, depending on how often you train) based on which muscles are freshest and furthest from this week's volume target. Then it fills the session with exercises your gym actually has, sized to the time you have.
+- **Not feeling it? Change it.** Swipe an exercise left to swap it for one that works the same muscles (or remove it), in today's plan, on any upcoming day, or mid-workout. **New workout** re-rolls a session and steers away from what it had, and **New week** re-rolls every session still to come that week. Changes to upcoming days are remembered, so they survive the forecast being rebuilt.
 - **Your split, your way.** Pick a preset (full body, upper/lower, push/pull/legs, PPL + upper/lower, push/pull/core, or a body-part split) or build your own rotation from any mix of days. Run it in order, picking up where you left off, or let the engine choose whichever day you're freshest for. Leave it on automatic and the split follows how many days a week you train.
 - **Tells you what to lift, and why.** Every exercise comes with a target weight, reps and reps-in-reserve plus a plain-English reason ("You hit 3×10 @ 80 kg with ~2 in reserve, so +2.5 kg"). Tap ⓘ to read it.
 - **Adjusts mid-workout.** If a set was far easier or harder than prescribed, the remaining sets re-target automatically.

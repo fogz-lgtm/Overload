@@ -3,15 +3,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { BodyMap, Figure, MuscleThumb, targetFill } from '../components/BodyMap';
 import { SwapSheet } from '../components/ExerciseSheets';
+import { SwipeHint, SwipeRow, type SwipeAction } from '../components/SwipeRow';
 import { Icon, type IconName } from '../components/Icon';
 import { Sheet } from '../components/Sheet';
 import { ExerciseVideo } from '../components/ExerciseVideo';
 import { DayPills, SplitSheet } from '../components/SplitSheet';
 import { db } from '../db/db';
 import { eraseAll } from '../db/demo';
-import { generateAndSave, loadProjection, recentDayTypes, saveSplit, startEmptyWorkout, startWorkout } from '../db/repo';
+import { generateAndSave, loadProjection, recentDayTypes, rerollDays, rerollPlan, saveSplit, startEmptyWorkout, startWorkout, swapInPlan, swapOnDay } from '../db/repo';
 import { detectPRs, weekStreak } from '../engine/analytics';
-import { DAY_TYPES, dayTypeOf, estimateMinutes, FOCUS_LABEL, nextRotationIndex, splitDays, splitName as rotationName, splitOrder, type Focus } from '../engine/generator';
+import { DAY_TYPES, dayTypeOf, FOCUS_LABEL, nextRotationIndex, splitDays, splitName as rotationName, splitOrder, type Focus } from '../engine/generator';
 import { flattenSets } from '../engine/history';
 import { kitFor } from '../engine/kit';
 import { formatWeight } from '../engine/load';
@@ -169,6 +170,24 @@ export function Today() {
     }
   }
 
+  async function run(job: () => Promise<unknown>, done: string) {
+    setBusy(true);
+    try {
+      await job();
+      haptics.success();
+      toast(done, { icon: 'refresh', tone: 'accent' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Every session still to come in the week on screen.
+  const weekAhead = (projection ?? []).filter((p) => p.day >= Math.max(weekStart, today) && p.day <= weekEnd);
+  const newWeek =
+    weekAhead.length > 1
+      ? () => run(() => rerollDays(weekAhead.map((p) => ({ day: p.day, exercises: p.workout.exercises }))), `New week planned · ${weekAhead.length} sessions`)
+      : undefined;
+
   return (
     <div className="page today">
       <header className="page-header">
@@ -272,7 +291,8 @@ export function Today() {
             exercises={ex.byId}
             busy={busy}
             onStart={startPlan}
-            onRegenerate={() => regenerate()}
+            onRegenerate={() => run(rerollPlan, 'New workout ready')}
+            onNewWeek={newWeek}
             onCustomize={() => setCustomize(true)}
             rotation={rotation}
             current={current >= 0 ? current : undefined}
@@ -282,7 +302,18 @@ export function Today() {
         )
       ) : selected > today ? (
         week.byDay.get(selected) ? (
-          <UpcomingCard entry={week.byDay.get(selected)!} today={today} profile={profile} exercises={ex.byId} onStart={active ? undefined : startPlan} />
+          <UpcomingCard
+            entry={week.byDay.get(selected)!}
+            today={today}
+            profile={profile}
+            exercises={ex.byId}
+            busy={busy}
+            onStart={active ? undefined : startPlan}
+            onReroll={(entry) =>
+              run(() => (entry.isPlan ? rerollPlan() : rerollDays([{ day: entry.day, exercises: entry.workout.exercises }])), `${dayLabel(entry.day, today)}: new workout`)
+            }
+            onNewWeek={newWeek}
+          />
         ) : projection === undefined ? (
           <section className="card hero stack" aria-busy="true">
             <div className="skeleton" style={{ height: 14, width: 120 }} />
@@ -383,6 +414,50 @@ function targetText(we: WorkoutExercise, ex: Exercise | undefined, profile: Prof
   };
 }
 
+/** Swipe actions on a planned exercise: swap it, or take it out. */
+function rowActions(onSwap: () => void, onRemove?: () => void): SwipeAction[] {
+  const actions: SwipeAction[] = [{ label: 'Swap', icon: 'swap', tone: 'accent', onClick: onSwap }];
+  if (onRemove) actions.push({ label: 'Remove', icon: 'trash', tone: 'danger', onClick: onRemove });
+  return actions;
+}
+
+/** Re-roll this session or the whole week, and (for today) customize it. */
+function PlanTools({
+  busy,
+  rerollLabel,
+  onReroll,
+  onNewWeek,
+  onCustomize,
+}: {
+  busy: boolean;
+  rerollLabel: string;
+  onReroll: () => void;
+  onNewWeek?: () => void;
+  onCustomize?: () => void;
+}) {
+  return (
+    <div className="today-tools">
+      <button type="button" className="btn sm" onClick={onReroll} disabled={busy}>
+        <span className={busy ? 'spin' : undefined} style={{ display: 'inline-flex' }}>
+          <Icon name="refresh" size={16} />
+        </span>
+        {rerollLabel}
+      </button>
+      {onNewWeek && (
+        <button type="button" className="btn sm" onClick={onNewWeek} disabled={busy}>
+          <Icon name="calendar" size={16} />
+          New week
+        </button>
+      )}
+      {onCustomize && (
+        <button type="button" className="icon-btn sm today-tools-more" onClick={onCustomize} aria-label="Customize today's workout">
+          <Icon name="sliders" size={18} />
+        </button>
+      )}
+    </div>
+  );
+}
+
 function PlanCard({
   plan,
   eyebrow,
@@ -391,6 +466,7 @@ function PlanCard({
   busy,
   onStart,
   onRegenerate,
+  onNewWeek,
   onCustomize,
   rotation,
   current,
@@ -404,6 +480,7 @@ function PlanCard({
   busy: boolean;
   onStart: () => void;
   onRegenerate: () => void;
+  onNewWeek?: () => void;
   onCustomize: () => void;
   rotation: DayType[];
   current?: number;
@@ -431,9 +508,10 @@ function PlanCard({
   const focus = planMuscles(plan, exercises);
   const sets = plan.exercises.reduce((a, we) => a + we.sets.filter((s) => s.kind === 'working').length, 0);
 
-  async function updatePlan(exs: WorkoutExercise[]) {
-    await db.workouts.update(plan!.id, { exercises: exs, estimatedMinutes: estimateMinutes(exs) });
-  }
+  const remove = async (we: WorkoutExercise) => {
+    await swapInPlan(we, null);
+    toast(`${exercises[we.exerciseId]?.name ?? 'Exercise'} removed`, { icon: 'trash' });
+  };
 
   return (
     <section className="card hero today-plan" aria-label="Today's workout">
@@ -480,6 +558,7 @@ function PlanCard({
           const t = targetText(we, e, profile);
           return (
             <li key={we.id}>
+              <SwipeRow actions={rowActions(() => setSwapFor(we), plan.exercises.length > 1 ? () => void remove(we) : undefined)} onSwipe={() => setSwapFor(we)}>
               <button type="button" className="today-ex" onClick={() => setPreview(we)}>
                 <span className="today-ex-idx display">{i + 1}</span>
                 {e && <MuscleThumb primary={e.primary} secondary={e.secondary} size={42} />}
@@ -495,21 +574,16 @@ function PlanCard({
                   <span className="small faint">{t.load}</span>
                 </span>
               </button>
+              </SwipeRow>
             </li>
           );
         })}
       </ol>
       {plan.exercises.length === 0 && <p className="small faint">Nothing fits these settings — try another focus or gym.</p>}
+      {plan.exercises.length > 0 && <SwipeHint text="Swipe an exercise left to swap it for one that works the same muscles." />}
 
+      <PlanTools busy={busy} rerollLabel="New workout" onReroll={onRegenerate} onNewWeek={onNewWeek} onCustomize={onCustomize} />
       <div className="row today-actions">
-        <button type="button" className="icon-btn" onClick={onCustomize} aria-label="Customize today's workout">
-          <Icon name="sliders" />
-        </button>
-        <button type="button" className="icon-btn" onClick={onRegenerate} disabled={busy} aria-label="Generate a different workout">
-          <span className={busy ? 'spin' : undefined} style={{ display: 'inline-flex' }}>
-            <Icon name="refresh" />
-          </span>
-        </button>
         <button type="button" className="btn primary lg grow" onClick={onStart} disabled={busy || plan.exercises.length === 0}>
           <Icon name="play" size={18} /> Start workout
         </button>
@@ -527,10 +601,9 @@ function PlanCard({
           setPreview(null);
         }}
         onRemove={async () => {
-          const id = preview!.id;
+          const target = preview!;
           setPreview(null);
-          await updatePlan(plan.exercises.filter((x) => x.id !== id));
-          toast('Exercise removed');
+          await remove(target);
         }}
       />
       <SwapSheet
@@ -541,7 +614,8 @@ function PlanCard({
         onPick={async (replacement) => {
           const target = swapFor!;
           setSwapFor(null);
-          await updatePlan(plan.exercises.map((x) => (x.id === target.id ? replacement : x)));
+          await swapInPlan(target, replacement);
+          haptics.tap();
           toast(`Swapped in ${exercises[replacement.exerciseId]?.name ?? 'exercise'}`, { icon: 'swap' });
         }}
       />
@@ -910,16 +984,34 @@ function UpcomingCard({
   today,
   profile,
   exercises,
+  busy,
   onStart,
+  onReroll,
+  onNewWeek,
 }: {
   entry: ProjectedDay;
   today: number;
   profile: Profile;
   exercises: Record<string, Exercise>;
+  busy: boolean;
   onStart?: () => void;
+  onReroll: (entry: ProjectedDay) => void;
+  onNewWeek?: () => void;
 }) {
   const w = entry.workout;
   const [timeOpen, setTimeOpen] = useState(false);
+  const [swapFor, setSwapFor] = useState<WorkoutExercise | null>(null);
+  const label = dayLabel(entry.day, today);
+  const when = label === 'Today' || label === 'Tomorrow' ? label.toLowerCase() : label;
+  // The waiting plan is a real workout; a forecast keeps the change as an edit and rebuilds around it.
+  const change = async (we: WorkoutExercise, replacement: WorkoutExercise | null) => {
+    if (entry.isPlan) await swapInPlan(we, replacement);
+    else await swapOnDay(entry.day, we.exerciseId, replacement?.exerciseId ?? null);
+  };
+  const remove = async (we: WorkoutExercise) => {
+    await change(we, null);
+    toast(`${exercises[we.exerciseId]?.name ?? 'Exercise'} removed from ${when}`, { icon: 'trash' });
+  };
   const [kind, muscles] = splitName(w.name);
   const focus = planMuscles(w, exercises);
   const sets = w.exercises.reduce((a, we) => a + we.sets.filter((s) => s.kind === 'working').length, 0);
@@ -953,7 +1045,8 @@ function UpcomingCard({
           const t = targetText(we, e, profile);
           return (
             <li key={`${we.exerciseId}-${i}`}>
-              <Link to={`/library/${we.exerciseId}`} className="today-ex">
+              <SwipeRow actions={rowActions(() => setSwapFor(we), w.exercises.length > 1 ? () => void remove(we) : undefined)} onSwipe={() => setSwapFor(we)}>
+              <Link to={`/library/${we.exerciseId}`} className="today-ex" draggable={false}>
                 <span className="today-ex-idx display">{i + 1}</span>
                 {e && <MuscleThumb primary={e.primary} secondary={e.secondary} size={42} />}
                 <span className="grow" style={{ minWidth: 0 }}>
@@ -967,24 +1060,41 @@ function UpcomingCard({
                   <span className="small faint">{t.load}</span>
                 </span>
               </Link>
+              </SwipeRow>
             </li>
           );
         })}
       </ol>
+
+      <SwipeHint text="Swipe an exercise left to swap it for one that works the same muscles." />
 
       <p className="today-forecast small">
         <Icon name="info" size={15} />
         <span>
           {entry.isPlan
             ? 'Your next session. Do it on the day, or start it now.'
-            : 'A forecast that assumes the sessions before it go as prescribed. It updates as you train.'}
+            : 'A forecast that assumes the sessions before it go as prescribed. It updates as you train, and keeps your swaps.'}
         </span>
       </p>
+      <PlanTools busy={busy} rerollLabel="Different workout" onReroll={() => onReroll(entry)} onNewWeek={onNewWeek} />
       {entry.isPlan && onStart && (
         <button type="button" className="btn primary lg block" onClick={onStart}>
           <Icon name="play" size={18} /> Start it now
         </button>
       )}
+      <SwapSheet
+        target={swapFor}
+        exercises={exercises}
+        inWorkout={w.exercises.map((x) => x.exerciseId)}
+        onClose={() => setSwapFor(null)}
+        onPick={async (replacement) => {
+          const target = swapFor!;
+          setSwapFor(null);
+          await change(target, replacement);
+          haptics.tap();
+          toast(`Swapped in ${exercises[replacement.exerciseId]?.name ?? 'exercise'} for ${when}`, { icon: 'swap' });
+        }}
+      />
     </section>
   );
 }

@@ -1,0 +1,84 @@
+.swipe {
+  position: relative;
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.swipe-front {
+  position: relative;
+  /* Vertical scrolling stays the browser's; sideways drags are the row's. */
+  touch-action: pan-y;
+  -webkit-touch-callout: none;
+  transition: transform var(--d2) var(--ease);
+  will-change: transform;
+}
+.swipe-back {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 0;
+  display: flex;
+  /* The first action sits outermost, where a full swipe ends up. */
+  flex-direction: row-reverse;
+  overflow: hidden;
+  border-radius: var(--r-md);
+  transition: width var(--d2) var(--ease);
+}
+.swipe-act {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 0;
+  padding: 0 4px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+  transition: flex-grow var(--d2) var(--ease);
+}
+.swipe-act svg {
+  flex-shrink: 0;
+}
+.swipe-act.accent {
+  color: var(--accent-ink);
+  background: var(--accent-fill);
+}
+.swipe-act.danger {
+  color: var(--bg);
+  background: var(--danger);
+}
+/* Far enough to let go: the first action takes the whole row. */
+.swipe-back.armed .swipe-act:first-child {
+  flex-grow: 12;
+}
+.swipe-act:focus-visible {
+  outline: 2px solid var(--text-1);
+  outline-offset: -4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .swipe-front,
+  .swipe-back,
+  .swipe-act {
+    transition-duration: 1ms;
+  }
+}
+.swipe-hint {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 6px 0 0;
+  color: var(--text-3);
+}
+.swipe-hint svg {
+  flex-shrink: 0;
+}
+.swipe-front a,
+.swipe-front img {
+  -webkit-user-drag: none;
+}

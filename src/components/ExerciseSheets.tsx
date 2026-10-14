@@ -63,8 +63,11 @@ export function SwapSheet({
               ex={o}
               trailing={<Icon name="swap" size={18} />}
               onClick={() => {
-                const remaining = target!.sets.filter((s) => s.kind === 'working' && !s.done).length || 3;
-                onPick(planExercise(o, input, remaining, false));
+                // Same number of sets still to do, and a warm-up if the original had one and it hasn't started.
+                const sets = target!.sets;
+                const remaining = sets.filter((s) => s.kind === 'working' && !s.drop && !s.done).length || 3;
+                const warmup = sets.some((s) => s.kind === 'warmup') && !sets.some((s) => s.done);
+                onPick(planExercise(o, input, remaining, warmup));
               }}
             />
           ))}

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { MuscleThumb } from '../components/BodyMap';
 import { AddExerciseSheet, SwapSheet } from '../components/ExerciseSheets';
+import { SwipeRow } from '../components/SwipeRow';
 import { useExerciseVideo, VideoSheet } from '../components/ExerciseVideo';
 import { Icon } from '../components/Icon';
 import { NumField } from '../components/NumField';
@@ -185,6 +186,22 @@ export function WorkoutLogger() {
     update((cur) => ({ ...cur, exercises: cur.exercises.map((e) => (e.id === we.id ? { ...e, sets: e.sets.filter((s) => s.id !== setId) } : e)) }));
   }
 
+  async function removeExercise(target: WorkoutExercise) {
+    const logged = target.sets.filter((s) => s.done).length;
+    if (
+      logged > 0 &&
+      !(await ask({
+        title: `Remove ${ex?.byId[target.exerciseId]?.name ?? 'this exercise'}?`,
+        body: `Its ${logged} logged ${logged === 1 ? 'set goes' : 'sets go'} too.`,
+        confirm: 'Remove',
+        tone: 'danger',
+      }))
+    )
+      return;
+    update((cur) => ({ ...cur, exercises: cur.exercises.filter((e) => e.id !== target.id) }));
+    toast('Exercise removed', { icon: 'trash' });
+  }
+
   function moveExercise(weId: string, dir: -1 | 1) {
     update((cur) => {
       const list = [...cur.exercises];
@@ -269,6 +286,8 @@ export function WorkoutLogger() {
               onAddSet={() => addSet(we)}
               onRemoveSet={(setId) => removeSet(we, setId)}
               onMenu={() => setMenuFor(we)}
+              onSwap={() => setSwapFor(we)}
+              onRemove={w.exercises.length > 1 ? () => removeExercise(we) : undefined}
               onDemo={() => exercise && setDemoFor(exercise)}
               weights={weights}
             />
@@ -353,8 +372,7 @@ export function WorkoutLogger() {
               onClick={() => {
                 const target = menuFor;
                 setMenuFor(null);
-                update((cur) => ({ ...cur, exercises: cur.exercises.filter((e) => e.id !== target.id) }));
-                toast('Exercise removed');
+                removeExercise(target);
               }}
             >
               <span className="row-icon" style={{ color: 'var(--danger)' }}>
@@ -423,6 +441,8 @@ function ExerciseCard({
   onAddSet,
   onRemoveSet,
   onMenu,
+  onSwap,
+  onRemove,
   onDemo,
   weights,
 }: {
@@ -441,6 +461,8 @@ function ExerciseCard({
   onAddSet: () => void;
   onRemoveSet: (setId: string) => void;
   onMenu: () => void;
+  onSwap: () => void;
+  onRemove?: () => void;
   onDemo: () => void;
   weights?: GymWeights;
 }) {
@@ -461,6 +483,13 @@ function ExerciseCard({
 
   return (
     <section className={`lg-ex card${current ? ' current' : ''}${complete ? ' complete' : ''}`} data-exercise={we.exerciseId}>
+      <SwipeRow
+        actions={[
+          { label: 'Swap', icon: 'swap', tone: 'accent', onClick: onSwap },
+          ...(onRemove ? [{ label: 'Remove', icon: 'trash' as const, tone: 'danger' as const, onClick: onRemove }] : []),
+        ]}
+        onSwipe={onSwap}
+      >
       <div className="lg-ex-head">
         <button type="button" className="lg-ex-title" onClick={onToggleExpand} aria-expanded={expanded}>
           {exercise && <MuscleThumb primary={exercise.primary} secondary={exercise.secondary} size={44} />}
@@ -491,6 +520,7 @@ function ExerciseCard({
           </>
         )}
       </div>
+      </SwipeRow>
 
       {expanded && (
         <>

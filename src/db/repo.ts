@@ -1,11 +1,22 @@
 import { detectPRs, type PR } from '../engine/analytics';
 import { EXERCISES } from '../engine/exercises';
-import { dayTypeOf, generateWorkout, type Focus, type GenerateInput, type GeneratedWorkout } from '../engine/generator';
+import {
+  applyDayEdit,
+  dayTypeOf,
+  estimateMinutes,
+  exerciseIds,
+  generateWorkout,
+  recordSwap,
+  withDayEdit,
+  type Focus,
+  type GenerateInput,
+  type GeneratedWorkout,
+} from '../engine/generator';
 import { computeRecovery } from '../engine/recovery';
 import { flattenSets } from '../engine/history';
-import { projectWorkouts, startOfDay, type ProjectedDay } from '../engine/schedule';
-import type { DayType, Exercise, ExercisePref, MuscleId, Split, Workout } from '../engine/types';
-import { uid } from '../engine/util';
+import { planDay, projectWorkouts, startOfDay, type ProjectedDay } from '../engine/schedule';
+import type { DayEdit, DayType, Exercise, ExercisePref, MuscleId, Split, Workout, WorkoutExercise } from '../engine/types';
+import { dayKey, uid } from '../engine/util';
 import { weeklySets } from '../engine/volume';
 import { db } from './db';
 
@@ -123,11 +134,78 @@ export async function savePlan(gen: GeneratedWorkout, gymId: string): Promise<st
   return id;
 }
 
+/** The day the waiting plan is for, as a dayEdits key. */
+async function planKey(input: GenerateInput): Promise<string> {
+  const active = await db.workouts.where('status').equals('active').count();
+  const trainedToday = active > 0 || input.history.some((s) => s.at >= startOfDay(input.now));
+  return dayKey(planDay(input.profile, input.now, trainedToday));
+}
+
 export async function generateAndSave(opts: Parameters<typeof loadGenerateInput>[0] = {}): Promise<string> {
-  const input = await loadGenerateInput(opts);
-  const gen = generateWorkout(input);
+  const base = await loadGenerateInput(opts);
+  // The lifter's re-roll and swaps for this day survive a rebuild.
+  const edit = base.profile.dayEdits?.[await planKey(base)];
+  const input = withDayEdit(base, edit);
+  const gen = applyDayEdit(generateWorkout(input), edit, input);
   const gymId = opts.gymId ?? input.profile.activeGymId;
   return savePlan(gen, gymId);
+}
+
+/** Saves edits for some days, dropping any for days gone by. */
+async function saveDayEdits(changes: Record<string, DayEdit | undefined>): Promise<void> {
+  const profile = await db.profile.get('me');
+  if (!profile) return;
+  const today = dayKey(Date.now());
+  const next: Record<string, DayEdit> = {};
+  for (const [k, v] of Object.entries({ ...profile.dayEdits, ...changes })) if (v && k >= today) next[k] = v;
+  await db.profile.update('me', { dayEdits: next });
+}
+
+const randomSeed = () => 1 + Math.floor(Math.random() * 1e9);
+
+/** A re-roll for a day: a fresh seed, away from what it has now and anything the lifter swapped out of it. */
+function reroll(previous: DayEdit | undefined, exercises: Pick<WorkoutExercise, 'exerciseId'>[]): DayEdit {
+  const swappedOut = (previous?.swaps ?? []).map((s) => s.from);
+  return { seed: randomSeed(), avoid: [...new Set([...exerciseIds(exercises), ...swappedOut])] };
+}
+
+/**
+ * A different session for each of these days: a fresh seed that steers away
+ * from the exercises shown now. Swaps made on those days are dropped, since
+ * the session they applied to is gone. Rebuilds the waiting plan if it's one of them.
+ */
+export async function rerollDays(days: { day: number; exercises: Pick<WorkoutExercise, 'exerciseId'>[] }[]): Promise<void> {
+  if (!days.length) return;
+  const input = await loadGenerateInput();
+  const changes: Record<string, DayEdit> = {};
+  for (const d of days) changes[dayKey(d.day)] = reroll(input.profile.dayEdits?.[dayKey(d.day)], d.exercises);
+  await saveDayEdits(changes);
+  if (changes[await planKey(input)]) await refreshPlan();
+}
+
+/** A different waiting plan, steering away from the exercises in it now. */
+export async function rerollPlan(): Promise<void> {
+  const [input, plan] = await Promise.all([loadGenerateInput(), db.workouts.where('status').equals('planned').first()]);
+  const key = await planKey(input);
+  await saveDayEdits({ [key]: reroll(input.profile.dayEdits?.[key], plan?.exercises ?? []) });
+  await generateAndSave();
+}
+
+/** Swaps (or with `replacement` null, removes) an exercise in the waiting plan, remembered if the plan is rebuilt. */
+export async function swapInPlan(from: WorkoutExercise, replacement: WorkoutExercise | null): Promise<void> {
+  const [input, plan] = await Promise.all([loadGenerateInput(), db.workouts.where('status').equals('planned').first()]);
+  if (!plan) return;
+  const exercises = replacement ? plan.exercises.map((x) => (x.id === from.id ? replacement : x)) : plan.exercises.filter((x) => x.id !== from.id);
+  await db.workouts.update(plan.id, { exercises, estimatedMinutes: estimateMinutes(exercises) });
+  const key = await planKey(input);
+  await saveDayEdits({ [key]: recordSwap(input.profile.dayEdits?.[key], from.exerciseId, replacement?.exerciseId ?? null) });
+}
+
+/** Swaps (or removes) an exercise in a forecast day; the forecast rebuilds around it. */
+export async function swapOnDay(day: number, from: string, to: string | null): Promise<void> {
+  const profile = await db.profile.get('me');
+  const key = dayKey(day);
+  await saveDayEdits({ [key]: recordSwap(profile?.dayEdits?.[key], from, to) });
 }
 
 /** Rebuilds the waiting plan after a settings change, unless a workout is under way. */

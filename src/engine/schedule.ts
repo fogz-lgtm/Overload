@@ -1,6 +1,7 @@
-import { dayTypeOf, generateWorkout, type GenerateInput, type GeneratedWorkout } from './generator';
+import { applyDayEdit, dayTypeOf, generateWorkout, withDayEdit, type GenerateInput, type GeneratedWorkout } from './generator';
 import { computeRecovery } from './recovery';
 import type { Activity, DayType, MuscleId, PerformedSet, Profile, Workout } from './types';
+import { dayKey } from './util';
 import { weeklySets } from './volume';
 
 /** Training weekdays (0 = Monday) for a number of days a week, spread so rest days fall between sessions. */
@@ -62,6 +63,16 @@ export function isTrainingDay(t: number, profile: Pick<Profile, 'daysPerWeek' | 
   return trainingDays(profile).includes(weekday(t));
 }
 
+/** The day the waiting plan is for: today, or the next training day when today is a rest day or already done. */
+export function planDay(profile: Pick<Profile, 'daysPerWeek' | 'trainingDays'>, now: number, trainedToday: boolean): number {
+  const today = startOfDay(now);
+  for (let i = 0; i < 7; i++) {
+    const day = addDays(today, i);
+    if (isTrainingDay(day, profile) && !(i === 0 && trainedToday)) return day;
+  }
+  return today;
+}
+
 export interface ProjectedDay {
   /** Midnight at the start of the day. */
   day: number;
@@ -119,14 +130,20 @@ export function projectWorkouts(input: ProjectionInput, until: number): Projecte
       workout = { name: plan.name, focus: plan.focus as MuscleId[], focusKind, summary: plan.summary ?? '', estimatedMinutes: plan.estimatedMinutes, exercises: plan.exercises };
       plan = undefined;
     } else {
-      workout = generateWorkout({
-        ...input,
-        history,
-        recovery: computeRecovery(history, input.activities, byId, at),
-        weekly: weeklySets(history, byId, at),
-        now: at,
-        recentDays: recent,
-      });
+      // The lifter's re-rolls and swaps for this day carry into the forecast.
+      const edit = input.profile.dayEdits?.[dayKey(day)];
+      const dayInput = withDayEdit(
+        {
+          ...input,
+          history,
+          recovery: computeRecovery(history, input.activities, byId, at),
+          weekly: weeklySets(history, byId, at),
+          now: at,
+          recentDays: recent,
+        },
+        edit,
+      );
+      workout = applyDayEdit(generateWorkout(dayInput), edit, dayInput);
     }
     if (!workout.exercises.length) continue;
     out.push({ day, workout, isPlan });

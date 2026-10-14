@@ -169,9 +169,31 @@
   margin-top: 16px;
   gap: 10px;
 }
-.today-actions .icon-btn {
-  width: 56px;
-  height: 56px;
+.today-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+.today-tools .btn {
+  flex: 1 0 auto;
+  justify-content: center;
+  gap: 7px;
+  min-height: 40px;
+}
+.today-tools .icon-btn {
+  width: 40px;
+  height: 40px;
+}
+.today-tools-more {
+  flex-shrink: 0;
+}
+.today-tools + .today-actions {
+  margin-top: 12px;
+}
+.today-upcoming .today-tools {
+  margin-bottom: 4px;
 }
 .spin {
   animation: spin 0.8s linear infinite;
