@@ -1,4 +1,5 @@
 import { Link, NavLink } from 'react-router-dom';
+import { useRest } from '../audio/restAlert';
 import type { Workout } from '../engine/types';
 import { formatClock, useNow } from '../hooks';
 import { Icon, type IconName } from './Icon';
@@ -13,7 +14,9 @@ const TABS: { to: string; label: string; icon: IconName }[] = [
 
 /** While a workout is running, a dock above the tabs leads back to it from anywhere. */
 function ActiveDock({ active }: { active: Workout }) {
-  const now = useNow(1000);
+  const shared = useRest();
+  const rest = shared?.workoutId === active.id ? shared : null;
+  const now = useNow(rest ? 250 : 1000);
   const done = active.exercises.flatMap((e) => e.sets).filter((s) => s.done).length;
   const total = active.exercises.flatMap((e) => e.sets).length;
   return (
@@ -24,7 +27,7 @@ function ActiveDock({ active }: { active: Workout }) {
           {active.name.split(' · ')[0]}
         </strong>
         <span className="num" style={{ fontSize: 12, opacity: 0.75 }}>
-          {formatClock(now - (active.startedAt ?? now))} · {done}/{total} sets
+          {rest ? `Rest ${formatClock(Math.max(0, rest.endsAt - now) + 999)}` : formatClock(now - (active.startedAt ?? now))} · {done}/{total} sets
         </span>
       </span>
       <span className="btn sm" style={{ background: 'var(--accent-ink)', color: 'var(--accent-fill)', border: 0 }}>

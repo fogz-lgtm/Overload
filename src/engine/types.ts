@@ -182,7 +182,14 @@ export interface TrainingStyle {
   effort?: -1 | 0 | 1;
   /** Start the rest timer when a set is ticked off (default on). */
   autoRest?: boolean;
+  /** What happens when a rest runs out (default: a ding). */
+  restSound?: RestSound;
+  /** Keep the screen on during workouts (default on). */
+  keepAwake?: boolean;
 }
+
+/** 'ding' with the app open, 'lock' also on the lock screen (pauses other apps' music), or 'off'. */
+export type RestSound = 'ding' | 'lock' | 'off';
 
 /** How many pairs of one plate size a gym has. */
 export interface PlatePair {

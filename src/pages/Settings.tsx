@@ -13,9 +13,10 @@ import { splitDays, splitName } from '../engine/generator';
 import { trainingDays, trainingDaysText, WEEKDAY_SHORT } from '../engine/schedule';
 import { formatWeight, formatWeightWhole, fromDisplay } from '../engine/load';
 import { goalScheme } from '../engine/progression';
-import type { DropSetPolicy, Equipment, Experience, Goal, Gym, GymWeights, Profile, Sex, Split, TrainingStyle, Units, WarmupPolicy } from '../engine/types';
+import type { DropSetPolicy, Equipment, Experience, Goal, Gym, GymWeights, Profile, RestSound, Sex, Split, TrainingStyle, Units, WarmupPolicy } from '../engine/types';
 import { dayKey, uid } from '../engine/util';
 import { download, formatDate, useProfile } from '../hooks';
+import { testSound } from '../audio/restAlert';
 import { beginConnect, callbackDomain, codeFromPaste, disconnectStrava, finishConnect, isConnected, saveStravaApp, STRAVA_APPS_URL, syncStrava } from '../strava/client';
 import { getTheme, setTheme, type ThemePref } from '../theme';
 import { haptics } from '../ui/haptics';
@@ -36,6 +37,17 @@ const GOALS: Option<Goal>[] = [
   { value: 'general', title: 'General fitness', body: 'Balanced, efficient sessions that fit around life.' },
   { value: 'endurance', title: 'Muscular endurance', body: 'Higher reps and short rest. Pairs well with running or sport.' },
 ];
+
+const SOUNDS: Option<RestSound>[] = [
+  { value: 'ding', title: 'Ding', body: 'Plays over your music while Overload is open. On iPhone, the ringer switch has to be on.' },
+  {
+    value: 'lock',
+    title: 'Ding, even when locked',
+    body: 'Your rest counts down on the lock screen and dings on time, even on silent. Pauses music from other apps while you rest.',
+  },
+  { value: 'off', title: 'No sound', body: 'A vibration where the phone supports it, and a note on screen.' },
+];
+const SOUND_LABEL: Record<RestSound, string> = { ding: 'Ding', lock: 'Lock screen', off: 'Off' };
 
 const WARMUPS: Option<WarmupPolicy>[] = [
   { value: 'main', title: 'Main lifts', body: 'Ramp-up sets before the first two heavy lifts, where they matter most.' },
@@ -289,7 +301,7 @@ function InlineError({ text }: { text: string | null }) {
 
 // ── Page ───────────────────────────────────────────────────────────────────
 
-type Panel = 'profile' | 'goal' | 'experience' | 'days' | 'split' | 'length' | 'units' | 'rest' | 'warmups' | 'drops' | 'effort' | 'ai' | 'strava' | 'fresh';
+type Panel = 'profile' | 'goal' | 'experience' | 'days' | 'split' | 'length' | 'units' | 'rest' | 'sound' | 'warmups' | 'drops' | 'effort' | 'ai' | 'strava' | 'fresh';
 
 export function Settings() {
   const profile = useProfile();
@@ -393,6 +405,21 @@ export function Settings() {
               onChange={(e) => void saveStyle(profile.style, { autoRest: e.target.checked ? undefined : false }, e.target.checked ? 'Rest timer starts itself' : 'Rest timer off — start it from the set', false)}
             />
           </label>
+          <Row icon="bell" label="When rest ends" value={SOUND_LABEL[profile.style?.restSound ?? 'ding']} onClick={() => setPanel('sound')} />
+          <label className="group-row set-row toggle set-toggle-row">
+            <span className="row-icon">
+              <Icon name="sun" size={17} />
+            </span>
+            <span className="set-row-text">
+              <span className="set-row-label">Keep screen on</span>
+              <span className="set-row-sub">While a workout is under way</span>
+            </span>
+            <input
+              type="checkbox"
+              checked={profile.style?.keepAwake !== false}
+              onChange={(e) => void saveStyle(profile.style, { keepAwake: e.target.checked ? undefined : false }, e.target.checked ? 'Screen stays on during workouts' : 'Screen can sleep during workouts', false)}
+            />
+          </label>
         </div>
         <p className="set-footnote small">Today's plan is rebuilt to match. You can still change any set or rest during a workout.</p>
       </Section>
@@ -482,6 +509,7 @@ export function Settings() {
       )}
       {panel === 'length' && <LengthSheet minutes={profile.sessionMinutes} onClose={close} />}
       {panel === 'rest' && <RestSheet profile={profile} onClose={close} />}
+      {panel === 'sound' && <SoundSheet profile={profile} onClose={close} />}
       {panel === 'warmups' && (
         <Sheet open onClose={close} title="Warm-up sets" subtitle="Lighter ramp-up sets before heavy lifts. They don't count toward your volume.">
           <OptionCards
@@ -667,6 +695,41 @@ function DaysSheet({ days, split, onClose }: { days: number[]; split: Split | un
 }
 
 const EFFORT_LABEL: Record<string, string> = { '1': 'Easier', '0': 'Standard', '-1': 'Harder' };
+
+function SoundSheet({ profile, onClose }: { profile: Profile; onClose: () => void }) {
+  const mode = profile.style?.restSound ?? 'ding';
+  const [testing, setTesting] = useState(false);
+  const test = () => {
+    testSound(mode);
+    if (mode === 'lock') {
+      setTesting(true);
+      setTimeout(() => setTesting(false), 11_000);
+    }
+  };
+  return (
+    <Sheet open onClose={onClose} title="When rest ends" subtitle="How Overload tells you the next set is up.">
+      <div className="stack lg">
+        <OptionCards
+          options={SOUNDS}
+          value={mode}
+          onPick={(restSound) => void saveStyle(profile.style, { restSound: restSound === 'ding' ? undefined : restSound }, `When rest ends: ${titleOf(SOUNDS, restSound).toLowerCase()}`, false)}
+        />
+        {mode === 'lock' && (
+          <p className="small muted">
+            Your phone treats the rest timer like music, which is how it keeps playing with the screen off. Lock-screen buttons skip the rest or move the
+            ding by 15 seconds. Some iPhones stop web-app audio when locked: run the test to check yours.
+          </p>
+        )}
+        {mode !== 'off' && (
+          <button type="button" className="btn block" onClick={test} disabled={testing}>
+            <Icon name={mode === 'lock' ? 'timer' : 'bell'} size={18} />
+            {mode === 'lock' ? (testing ? 'Lock your phone now · ding in 10 s' : 'Test it: lock your phone, ding in 10 s') : 'Play the ding'}
+          </button>
+        )}
+      </div>
+    </Sheet>
+  );
+}
 
 function schemeForSettings(profile: Profile) {
   const base = goalScheme(profile.goal, profile.experience);

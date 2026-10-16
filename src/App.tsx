@@ -1,6 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { RestWatcher } from './components/RestWatcher';
 import { StravaReturn } from './components/StravaReturn';
 import { TabBar } from './components/TabBar';
 import { db } from './db/db';
@@ -41,7 +42,9 @@ function Shell() {
   const { pathname } = useLocation();
   // Logging a workout is a focused, full-screen task: no tab bar.
   const focus = pathname.startsWith('/workout/');
-  const active = useLiveQuery(() => db.workouts.where('status').equals('active').first());
+  // null once it's known there's no workout under way; undefined while loading.
+  const current = useLiveQuery(async () => (await db.workouts.where('status').equals('active').first()) ?? null);
+  const active = current ?? undefined;
   useStravaAutoSync();
   return (
     <>
@@ -67,6 +70,7 @@ function Shell() {
         </Routes>
       </main>
       {!focus && <TabBar active={active} />}
+      <RestWatcher active={current} />
       <ToastHost />
       <AskHost />
     </>

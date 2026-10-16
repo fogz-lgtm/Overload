@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { MuscleThumb } from '../components/BodyMap';
 import { AddExerciseSheet, SwapSheet } from '../components/ExerciseSheets';
 import { SwipeRow } from '../components/SwipeRow';
+import { releaseRestAudio, restStarted, setRest, startRestTrack, stopRestTrack, useRest, type RestInfo } from '../audio/restAlert';
 import { useExerciseVideo, VideoSheet } from '../components/ExerciseVideo';
 import { Icon } from '../components/Icon';
 import { NumField } from '../components/NumField';
@@ -27,11 +28,7 @@ import { splitName } from './Today';
 import { WorkoutSummary } from './WorkoutSummary';
 import './WorkoutLogger.css';
 
-interface Rest {
-  endsAt: number;
-  total: number;
-  next?: string;
-}
+type Rest = RestInfo;
 
 export function WorkoutLogger() {
   const { id = '' } = useParams();
@@ -42,7 +39,8 @@ export function WorkoutLogger() {
   const stored = useLiveQuery(async () => (await db.workouts.get(id)) ?? null, [id]);
   const weights = useLiveQuery(async () => (stored ? (await db.gyms.get(stored.gymId))?.weights : undefined), [stored?.gymId]);
   const [w, setW] = useState<Workout | null>(null);
-  const [rest, setRest] = useState<Rest | null>(null);
+  const shared = useRest();
+  const rest = shared?.workoutId === id ? shared : null;
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [menuFor, setMenuFor] = useState<WorkoutExercise | null>(null);
@@ -65,13 +63,15 @@ export function WorkoutLogger() {
     });
   }, []);
 
-  useEffect(() => {
-    if (rest && now >= rest.endsAt) {
-      haptics.alarm();
-      toast('Rest over — next set', { icon: 'timer', tone: 'accent', ms: 1800 });
-      setRest(null);
-    }
-  }, [now, rest]);
+  const sound = profile?.style?.restSound ?? 'ding';
+
+  /** Starts, replaces or clears the rest. Runs from taps, which is when browsers allow sound to start. */
+  const beginRest = (r: Rest | null) => {
+    const next = r && { ...r, workoutId: id };
+    setRest(next);
+    if (next) restStarted(sound, next);
+    else stopRestTrack();
+  };
 
   // Previous session of each exercise, for the "last time" line.
   const lastTime = useMemo(() => {
@@ -145,25 +145,29 @@ export function WorkoutLogger() {
     const exIdx = w!.exercises.findIndex((e) => e.id === we.id);
     const nextEx = w!.exercises.slice(exIdx + 1).find((e) => e.sets.some((x) => !x.done));
     if (!nextInEx && !nextEx) {
-      setRest(null);
+      beginRest(null);
       haptics.success();
       return;
     }
     if (!nextInEx) haptics.success();
     const nextSet = nextInEx ?? nextEx!.sets.find((x) => !x.done)!;
     const nextName = nextInEx ? undefined : ex!.byId[nextEx!.exerciseId]?.name;
+    // The lock screen has no exercise card around it, so it always names the exercise.
+    const nextExercise = ex!.byId[(nextInEx ? we : nextEx!).exerciseId]?.name;
     const load = nextSet.targetWeightKg > 0 ? `${formatWeight(nextSet.targetWeightKg, units)} × ` : '';
     if (nextInEx?.drop) {
       // Strip the weight and go: just long enough to change it.
-      setRest({ endsAt: Date.now() + 10_000, total: 10, next: `Drop set · ${load}as many as you can` });
+      const drop = `Drop set · ${load}as many as you can`;
+      beginRest({ endsAt: Date.now() + 10_000, total: 10, next: drop, detail: nextExercise ? `${nextExercise} · ${drop}` : drop });
       return;
     }
     if (profile?.style?.autoRest === false) {
-      setRest(null);
+      beginRest(null);
       return;
     }
     const secs = s.kind === 'warmup' ? 60 : we.restSec;
-    setRest({ endsAt: Date.now() + secs * 1000, total: secs, next: `${nextName ? `${nextName} · ` : ''}${load}${nextSet.targetReps}` });
+    const target = `${load}${nextSet.targetReps}`;
+    beginRest({ endsAt: Date.now() + secs * 1000, total: secs, next: `${nextName ? `${nextName} · ` : ''}${target}`, detail: nextExercise ? `${nextExercise} · ${target}` : target });
   }
 
   function addSet(we: WorkoutExercise) {
@@ -218,6 +222,8 @@ export function WorkoutLogger() {
     if (doneCount === 0) {
       const discard = await ask({ title: 'Nothing logged yet', body: 'Discard this workout? It will not be saved.', confirm: 'Discard', tone: 'danger', icon: 'trash' });
       if (discard) {
+        beginRest(null);
+        releaseRestAudio();
         await discardWorkout(w!.id);
         navigate('/');
       }
@@ -237,6 +243,7 @@ export function WorkoutLogger() {
     const prs = await finishWorkout(w!.id);
     const workout = (await db.workouts.get(w!.id))!;
     setRest(null);
+    releaseRestAudio();
     haptics.success();
     window.scrollTo(0, 0);
     setSummary({ prs, workout });
@@ -315,6 +322,8 @@ export function WorkoutLogger() {
           className="btn ghost danger block"
           onClick={async () => {
             if (!(await ask({ title: 'Discard workout?', body: 'Nothing from this session will be saved.', confirm: 'Discard', tone: 'danger', icon: 'trash' }))) return;
+            beginRest(null);
+            releaseRestAudio();
             await discardWorkout(w.id);
             navigate('/');
           }}
@@ -323,7 +332,18 @@ export function WorkoutLogger() {
         </button>
       </div>
 
-      {rest && <RestTimer rest={rest} now={now} onAdjust={(d) => setRest({ ...rest, endsAt: Math.max(Date.now() + 1000, rest.endsAt + d * 1000), total: Math.max(5, rest.total + d) })} onSkip={() => setRest(null)} />}
+      {rest && (
+        <RestTimer
+          rest={rest}
+          now={now}
+          onAdjust={(d) => {
+            const next = { ...rest, endsAt: Math.max(Date.now() + 1000, rest.endsAt + d * 1000), total: Math.max(5, rest.total + d) };
+            setRest(next);
+            if (sound === 'lock') startRestTrack(next);
+          }}
+          onSkip={() => beginRest(null)}
+        />
+      )}
 
       {demoFor && <VideoSheet exercise={demoFor} onClose={() => setDemoFor(null)} />}
 
