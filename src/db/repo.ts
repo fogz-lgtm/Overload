@@ -258,6 +258,8 @@ export async function finishWorkout(id: string): Promise<PR[]> {
   const finished: Workout = { ...w, exercises, status: 'done', finishedAt: Date.now() };
   const prior = flattenSets(await db.workouts.where('status').equals('done').toArray());
   await db.workouts.put(finished);
+  // The next plan starts from this session: its recovery, volume and place in the split.
+  await generateAndSave();
   return detectPRs(flattenSets([finished]), prior);
 }
 

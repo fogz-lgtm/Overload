@@ -80,14 +80,18 @@ export function Today() {
     setTrainAnyway(false);
   }, [today]);
 
-  // A plan is only good for the day it was made: recovery moves on.
+  // A plan is only good for the day it was made: recovery moves on. Never
+  // while a workout is under way: it isn't in the history yet, so the plan
+  // would repeat it. Finishing the workout builds the next one.
+  const lastFinished = state?.workouts[0]?.finishedAt;
   useEffect(() => {
-    if (planned === undefined || autoGen.current || !profile) return;
-    if (planned === null || dayKey(planned.createdAt) !== dayKey(Date.now())) {
+    if (planned === undefined || active === undefined || active || autoGen.current || !profile) return;
+    // Also stale: a plan made before the latest workout ended (an older version built one mid-workout).
+    if (planned === null || dayKey(planned.createdAt) !== dayKey(Date.now()) || (lastFinished !== undefined && planned.createdAt < lastFinished)) {
       autoGen.current = true;
       void generateAndSave();
     }
-  }, [planned, profile]);
+  }, [planned, active, profile, lastFinished]);
 
   const week = useMemo(() => {
     if (!state) return undefined;
