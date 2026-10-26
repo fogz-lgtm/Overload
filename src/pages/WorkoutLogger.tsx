@@ -603,19 +603,25 @@ function ExerciseCard({
                   />
                   <NumField className="lg-input" label={`Set ${label} ${timed ? 'seconds' : 'reps'}`} decimals={0} value={s.reps} placeholder={String(s.targetReps)} onChange={(v) => onPatch(s.id, { reps: v })} />
                   {s.kind === 'working' && !timed ? (
-                    <select
-                      className={`lg-input lg-rir${s.rir === undefined ? ' unset' : ''}`}
-                      aria-label={`Set ${label} reps in reserve`}
-                      value={s.rir ?? ''}
-                      onChange={(e) => onPatch(s.id, { rir: e.target.value === '' ? undefined : Number(e.target.value) })}
-                    >
-                      <option value="">{s.targetRir}</option>
-                      <option value="0">0</option>
-                      <option value="1">1</option>
-                      <option value="2">2</option>
-                      <option value="3">3</option>
-                      <option value="4">4+</option>
-                    </select>
+                    // The box shows just the number; the phone's picker gets labels that say what each one means.
+                    <span className={`lg-input lg-rir${s.rir === undefined ? ' unset' : ''}`}>
+                      <span aria-hidden="true">{s.rir === undefined ? s.targetRir : s.rir >= 4 ? '4+' : s.rir}</span>
+                      <select
+                        aria-label={`Set ${label} reps in reserve`}
+                        value={s.rir ?? ''}
+                        onChange={(e) => onPatch(s.id, { rir: e.target.value === '' ? undefined : Number(e.target.value) })}
+                      >
+                        <option value="">Not logged · aim for {rirText(s.targetRir)}</option>
+                        <optgroup label="Reps you had left">
+                          {RIR_CHOICES.map(([v, text]) => (
+                            <option key={v} value={v}>
+                              {text}
+                              {v === Math.min(4, s.targetRir) ? ' (target)' : ''}
+                            </option>
+                          ))}
+                        </optgroup>
+                      </select>
+                    </span>
                   ) : (
                     <span />
                   )}
@@ -644,6 +650,17 @@ function ExerciseCard({
     </section>
   );
 }
+
+/** Reps in reserve, as the picker lists them. */
+const RIR_CHOICES: [number, string][] = [
+  [0, '0 · couldn’t do another'],
+  [1, '1 · one more'],
+  [2, '2 · two more'],
+  [3, '3 · three more'],
+  [4, '4+ · plenty left'],
+];
+
+const rirText = (n: number) => (n <= 0 ? 'failure' : n >= 4 ? '4+ left' : `${n} left`);
 
 function RestTimer({ rest, now, onAdjust, onSkip }: { rest: Rest; now: number; onAdjust: (deltaSec: number) => void; onSkip: () => void }) {
   const left = Math.max(0, rest.endsAt - now);

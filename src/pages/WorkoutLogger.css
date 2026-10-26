@@ -213,15 +213,33 @@
   box-shadow: 0 0 0 4px var(--accent-soft);
   background: var(--surface-1);
 }
-select.lg-rir {
+.lg-rir {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+.lg-rir.unset {
+  color: var(--text-3);
+}
+/* The real picker sits invisibly on top: tapping anywhere on the box opens it. */
+.lg-rir select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  border: 0;
+  font-size: 16px;
   -webkit-appearance: none;
   appearance: none;
-  font-size: 18px;
   cursor: pointer;
-  text-align-last: center;
 }
-select.lg-rir.unset {
-  color: var(--text-3);
+.lg-rir:focus-within {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+  background: var(--surface-1);
 }
 .lg-row.warmup .lg-input {
   height: 42px;
