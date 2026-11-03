@@ -1084,7 +1084,7 @@ function UpcomingCard({
   // The waiting plan is a real workout; a forecast keeps the change as an edit and rebuilds around it.
   const change = async (we: WorkoutExercise, replacement: WorkoutExercise | null) => {
     if (entry.isPlan) await swapInPlan(we, replacement);
-    else await swapOnDay(entry.day, we, replacement?.exerciseId ?? null);
+    else await swapOnDay(entry.day, we, replacement?.exerciseId ?? null, w.exercises);
   };
   const remove = async (we: WorkoutExercise) => {
     await change(we, null);

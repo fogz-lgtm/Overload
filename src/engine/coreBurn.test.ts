@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { buildCoreBurn, coreRole, currentExercise, nextAfter, ROUND_REST_SEC, setOrder, TRANSITION_SEC } from './coreBurn';
+import { buildCoreBurn, burnFor, coreRole, currentExercise, nextAfter, ROUND_REST_SEC, setOrder, TRANSITION_SEC, withCoreBurn } from './coreBurn';
 import { EXERCISES, EXERCISE_BY_ID } from './exercises';
 import type { GenerateInput } from './generator';
+import { projectWorkouts } from './schedule';
 import type { Equipment, PerformedSet, Profile, WorkoutExercise } from './types';
+import { dayKey } from './util';
 
 const NOW = new Date(2026, 10, 3, 18).getTime();
 const profile: Profile = {
@@ -119,5 +121,43 @@ describe('running a circuit', () => {
     ws[0]!.sets.forEach((s) => (s.done = true));
     ws[1]!.sets[0]!.done = true;
     expect(currentExercise(ws)!.id).toBe('twist');
+  });
+});
+
+describe('the everyday core burn', () => {
+  const withSetting = (minutes?: number): Profile => ({ ...profile, style: minutes ? { coreBurn: minutes } : undefined });
+  const gen = () => ({ exercises: [] as WorkoutExercise[], estimatedMinutes: 40 });
+  const est = (ws: WorkoutExercise[]) => ws.length;
+
+  it('finishes every workout when it is on, with the same moves all day', () => {
+    const morning = withCoreBurn(gen(), undefined, input({ profile: withSetting(8), now: new Date(2026, 10, 3, 7).getTime() }), est);
+    const evening = withCoreBurn(gen(), undefined, input({ profile: withSetting(8), now: new Date(2026, 10, 3, 19).getTime() }), est);
+    expect(morning.exercises.length).toBeGreaterThanOrEqual(3);
+    expect(morning.exercises.every((e) => e.circuit === 'core-burn')).toBe(true);
+    expect(evening.exercises.map((e) => e.exerciseId)).toEqual(morning.exercises.map((e) => e.exerciseId));
+    expect(withCoreBurn(gen(), undefined, input({ profile: withSetting() }), est).exercises).toEqual([]);
+  });
+
+  it('stays off a day the lifter took it off, and follows their own pick', () => {
+    expect(withCoreBurn(gen(), null, input({ profile: withSetting(8) }), est).exercises).toEqual([]);
+    const own = withCoreBurn(gen(), { minutes: 5, moves: ['crunch', 'plank', 'russian-twist'], rounds: 2 }, input({ profile: withSetting() }), est);
+    expect(own.exercises.map((e) => e.exerciseId)).toEqual(['crunch', 'russian-twist', 'plank']);
+  });
+
+  it('drops a reshaped everyday burn once the setting is off', () => {
+    const reshaped = { minutes: 8, moves: ['crunch', 'plank', 'russian-twist'], rounds: 2, auto: true };
+    expect(burnFor(reshaped, withSetting(8))).toBe(reshaped);
+    expect(burnFor(reshaped, withSetting())).toBeUndefined();
+  });
+
+  it('shows in the forecast for every training day', () => {
+    const until = new Date(2026, 10, 15).getTime();
+    const base = { equipment: ['dumbbells', 'bench'] as Equipment[], exercises: EXERCISES, history: [], prefs: {}, activities: [], now: NOW, trainedToday: false };
+    const days = projectWorkouts({ ...base, profile: withSetting(5) }, until);
+    expect(days.length).toBeGreaterThan(2);
+    for (const d of days) expect(d.workout.exercises.some((e) => e.circuit)).toBe(true);
+    const skip = dayKey(days[1]!.day);
+    const skipped = projectWorkouts({ ...base, profile: { ...withSetting(5), dayEdits: { [skip]: { coreBurn: null } } } }, until);
+    expect(skipped.find((d) => dayKey(d.day) === skip)!.workout.exercises.some((e) => e.circuit)).toBe(false);
   });
 });

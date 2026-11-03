@@ -137,6 +137,14 @@ export interface Profile {
   dayEdits?: Record<string, DayEdit>;
 }
 
+export interface CoreBurnEdit {
+  minutes: number;
+  moves: string[];
+  rounds?: number;
+  /** Came from the everyday setting (then reshaped): it goes when the setting is turned off. */
+  auto?: boolean;
+}
+
 /** The lifter's changes to one day's session. */
 export interface DayEdit {
   /** Set when the session was re-rolled: a fresh seed, steering away from the exercises it replaced. */
@@ -144,8 +152,8 @@ export interface DayEdit {
   avoid?: string[];
   /** Exercises swapped out (`to` null: removed), in the order they were made. */
   swaps?: { from: string; to: string | null }[];
-  /** A core burn added to the end: its length, the moves picked and how many rounds. */
-  coreBurn?: { minutes: number; moves: string[]; rounds?: number };
+  /** A core burn added to the end: its length, the moves picked and how many rounds. null: none this day, even with the setting on. */
+  coreBurn?: CoreBurnEdit | null;
 }
 
 /**
@@ -188,6 +196,8 @@ export interface TrainingStyle {
   restSound?: RestSound;
   /** Keep the screen on during workouts (default on). */
   keepAwake?: boolean;
+  /** Finish every planned workout with a core burn of this many minutes (off when unset). */
+  coreBurn?: number;
 }
 
 /** 'ding' with the app open, 'lock' also on the lock screen (pauses other apps' music), or 'off'. */

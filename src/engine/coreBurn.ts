@@ -4,8 +4,8 @@
 
 import { isAvailable, planExercise, type GenerateInput } from './generator';
 import { isTimed } from './progression';
-import type { Exercise, PerformedSet, SetEntry, WorkoutExercise } from './types';
-import { mulberry32, uid } from './util';
+import type { CoreBurnEdit, Exercise, PerformedSet, SetEntry, WorkoutExercise } from './types';
+import { dayKey, hashString, mulberry32, uid } from './util';
 
 export const CORE_BURN_LENGTHS = [5, 8, 10] as const;
 export const CORE_BURN = 'core-burn';
@@ -198,15 +198,29 @@ export function currentExercise(exercises: WorkoutExercise[]): WorkoutExercise |
 
 // ── On a planned day ───────────────────────────────────────────────────────
 
-/** Adds the day's core burn (if the lifter asked for one) to a freshly built session. */
+/**
+ * The day's core burn: one the lifter added or shaped, none if they took it
+ * off, otherwise the everyday one from their settings.
+ */
+export function burnFor(edit: CoreBurnEdit | null | undefined, profile: BurnInput['profile']): CoreBurnEdit | undefined {
+  const minutes = profile.style?.coreBurn;
+  if (edit === null) return undefined;
+  if (edit) return edit.auto && !minutes ? undefined : edit;
+  return minutes ? { minutes, moves: [] } : undefined;
+}
+
+/** Adds the day's core burn (if there is one) to a freshly built session. */
 export function withCoreBurn<T extends { exercises: WorkoutExercise[]; estimatedMinutes: number }>(
   gen: T,
-  burn: { minutes: number; moves: string[]; rounds?: number } | undefined,
-  input: BurnInput & { seed?: number },
+  edit: CoreBurnEdit | null | undefined,
+  input: BurnInput,
   estimate: (exercises: WorkoutExercise[]) => number,
 ): T {
+  const burn = burnFor(edit, input.profile);
   if (!burn || gen.exercises.some((e) => e.circuit)) return gen;
-  const added = buildCoreBurn(input, burn.minutes, { moves: burn.moves, rounds: burn.rounds, exclude: gen.exercises.map((e) => e.exerciseId), seed: input.seed ?? input.now }).exercises;
+  // Seeded by the day alone, so the forecast and the day itself pick the same moves, and a re-roll keeps them.
+  const seed = hashString(`${dayKey(input.now)}:${CORE_BURN}`);
+  const added = buildCoreBurn(input, burn.minutes, { moves: burn.moves, rounds: burn.rounds, exclude: gen.exercises.map((e) => e.exerciseId), seed }).exercises;
   if (!added.length) return gen;
   const exercises = [...gen.exercises, ...added];
   return { ...gen, exercises, estimatedMinutes: estimate(exercises) };

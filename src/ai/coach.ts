@@ -131,7 +131,7 @@ export async function trainingSnapshot(): Promise<string> {
   const sch = schemeFor(profile);
   const st = profile.style;
   lines.push(
-    `Workout style: rest ${sch.restCompound}s compound / ${sch.restIsolation}s isolation${st?.restCompoundSec || st?.restIsolationSec ? ' (their choice)' : ' (goal default)'}; aim for ${sch.rir} reps in reserve; warm-ups ${st?.warmups ?? 'main lifts'}; drop sets ${st?.dropSets ?? 'off'}. Workouts you build follow these.`,
+    `Workout style: rest ${sch.restCompound}s compound / ${sch.restIsolation}s isolation${st?.restCompoundSec || st?.restIsolationSec ? ' (their choice)' : ' (goal default)'}; aim for ${sch.rir} reps in reserve; warm-ups ${st?.warmups ?? 'main lifts'}; drop sets ${st?.dropSets ?? 'off'}; ${st?.coreBurn ? `a ${st.coreBurn}-minute core burn (ab circuit) ends every planned workout` : 'no everyday core burn'}. Workouts you build follow these.`,
   );
   const days = splitDays(profile);
   const order = splitOrder(profile);

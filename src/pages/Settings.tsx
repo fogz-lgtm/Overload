@@ -49,6 +49,13 @@ const SOUNDS: Option<RestSound>[] = [
 ];
 const SOUND_LABEL: Record<RestSound, string> = { ding: 'Ding', lock: 'Lock screen', off: 'Off' };
 
+const BURNS: Option<string>[] = [
+  { value: '0', title: 'Off', body: 'Add one to a workout yourself whenever you want it.' },
+  { value: '5', title: '5 minutes', body: 'Three or four quick moves, two rounds.' },
+  { value: '8', title: '8 minutes', body: 'Four or five moves, two or three rounds.' },
+  { value: '10', title: '10 minutes', body: 'A proper finisher: up to five moves, three rounds.' },
+];
+
 const WARMUPS: Option<WarmupPolicy>[] = [
   { value: 'main', title: 'Main lifts', body: 'Ramp-up sets before the first two heavy lifts, where they matter most.' },
   { value: 'first', title: 'First lift only', body: 'Ramp up once, on the first heavy lift of the session.' },
@@ -301,7 +308,7 @@ function InlineError({ text }: { text: string | null }) {
 
 // ── Page ───────────────────────────────────────────────────────────────────
 
-type Panel = 'profile' | 'goal' | 'experience' | 'days' | 'split' | 'length' | 'units' | 'rest' | 'sound' | 'warmups' | 'drops' | 'effort' | 'ai' | 'strava' | 'fresh';
+type Panel = 'profile' | 'goal' | 'experience' | 'days' | 'split' | 'length' | 'units' | 'rest' | 'sound' | 'warmups' | 'drops' | 'effort' | 'burn' | 'ai' | 'strava' | 'fresh';
 
 export function Settings() {
   const profile = useProfile();
@@ -391,6 +398,13 @@ export function Settings() {
           <Row icon="flame" label="Warm-up sets" value={titleOf(WARMUPS, profile.style?.warmups ?? 'main')} onClick={() => setPanel('warmups')} />
           <Row icon="layers" label="Drop sets" value={profile.style?.dropSets && profile.style.dropSets !== 'off' ? titleOf(DROPS, profile.style.dropSets) : 'Off'} onClick={() => setPanel('drops')} />
           <Row icon="bolt" label="Effort" sub={`${style.rir} ${style.rir === 1 ? 'rep' : 'reps'} in reserve`} value={EFFORT_LABEL[String(profile.style?.effort ?? 0)]} onClick={() => setPanel('effort')} />
+          <Row
+            icon="muscle"
+            label="Core burn"
+            sub={profile.style?.coreBurn ? 'At the end of every workout' : 'Add one when you want it'}
+            value={profile.style?.coreBurn ? <span className="num">{profile.style.coreBurn} min</span> : 'Off'}
+            onClick={() => setPanel('burn')}
+          />
           <label className="group-row set-row toggle set-toggle-row">
             <span className="row-icon">
               <Icon name="play" size={17} />
@@ -510,6 +524,25 @@ export function Settings() {
       {panel === 'length' && <LengthSheet minutes={profile.sessionMinutes} onClose={close} />}
       {panel === 'rest' && <RestSheet profile={profile} onClose={close} />}
       {panel === 'sound' && <SoundSheet profile={profile} onClose={close} />}
+      {panel === 'burn' && (
+        <Sheet open onClose={close} title="Core burn" subtitle="A short ab circuit at the end of every planned workout.">
+          <div className="stack lg">
+            <OptionCards
+              options={BURNS}
+              value={String(profile.style?.coreBurn ?? 0)}
+              onPick={(v) => {
+                const minutes = Number(v);
+                void saveStyle(profile.style, { coreBurn: minutes || undefined }, minutes ? `Core burn: ${minutes} min at the end of every workout` : 'Core burn off');
+                dismissSheet(260);
+              }}
+            />
+            <p className="small muted">
+              It's added on top of your <span className="num">{profile.sessionMinutes}</span>-minute session, and the moves change from day to day. To skip it
+              once, remove it from that day's plan.
+            </p>
+          </div>
+        </Sheet>
+      )}
       {panel === 'warmups' && (
         <Sheet open onClose={close} title="Warm-up sets" subtitle="Lighter ramp-up sets before heavy lifts. They don't count toward your volume.">
           <OptionCards
