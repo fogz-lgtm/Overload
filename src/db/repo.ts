@@ -14,6 +14,7 @@ import {
 } from '../engine/generator';
 import { computeRecovery } from '../engine/recovery';
 import { flattenSets } from '../engine/history';
+import { swapBurnMove, withCoreBurn } from '../engine/coreBurn';
 import { planDay, projectWorkouts, startOfDay, type ProjectedDay } from '../engine/schedule';
 import type { DayEdit, DayType, Exercise, ExercisePref, MuscleId, Split, Workout, WorkoutExercise } from '../engine/types';
 import { dayKey, uid } from '../engine/util';
@@ -146,7 +147,7 @@ export async function generateAndSave(opts: Parameters<typeof loadGenerateInput>
   // The lifter's re-roll and swaps for this day survive a rebuild.
   const edit = base.profile.dayEdits?.[await planKey(base)];
   const input = withDayEdit(base, edit);
-  const gen = applyDayEdit(generateWorkout(input), edit, input);
+  const gen = withCoreBurn(applyDayEdit(generateWorkout(input), edit, input), edit?.coreBurn, input, estimateMinutes);
   const gymId = opts.gymId ?? input.profile.activeGymId;
   return savePlan(gen, gymId);
 }
@@ -164,9 +165,11 @@ async function saveDayEdits(changes: Record<string, DayEdit | undefined>): Promi
 const randomSeed = () => 1 + Math.floor(Math.random() * 1e9);
 
 /** A re-roll for a day: a fresh seed, away from what it has now and anything the lifter swapped out of it. */
-function reroll(previous: DayEdit | undefined, exercises: Pick<WorkoutExercise, 'exerciseId'>[]): DayEdit {
+function reroll(previous: DayEdit | undefined, exercises: Pick<WorkoutExercise, 'exerciseId' | 'circuit'>[]): DayEdit {
   const swappedOut = (previous?.swaps ?? []).map((s) => s.from);
-  return { seed: randomSeed(), avoid: [...new Set([...exerciseIds(exercises), ...swappedOut])] };
+  // The core burn is a separate choice: it stays.
+  const main = exercises.filter((e) => !e.circuit);
+  return { seed: randomSeed(), avoid: [...new Set([...exerciseIds(main), ...swappedOut])], ...(previous?.coreBurn ? { coreBurn: previous.coreBurn } : {}) };
 }
 
 /**
@@ -174,7 +177,7 @@ function reroll(previous: DayEdit | undefined, exercises: Pick<WorkoutExercise, 
  * from the exercises shown now. Swaps made on those days are dropped, since
  * the session they applied to is gone. Rebuilds the waiting plan if it's one of them.
  */
-export async function rerollDays(days: { day: number; exercises: Pick<WorkoutExercise, 'exerciseId'>[] }[]): Promise<void> {
+export async function rerollDays(days: { day: number; exercises: Pick<WorkoutExercise, 'exerciseId' | 'circuit'>[] }[]): Promise<void> {
   if (!days.length) return;
   const input = await loadGenerateInput();
   const changes: Record<string, DayEdit> = {};
@@ -191,6 +194,15 @@ export async function rerollPlan(): Promise<void> {
   await generateAndSave();
 }
 
+/** A day's edit after a swap: core burn moves live in the burn, everything else in the swaps. */
+function editAfterSwap(edit: DayEdit | undefined, from: string, to: string | null, inBurn: boolean): DayEdit {
+  if (inBurn && edit?.coreBurn) {
+    const coreBurn = swapBurnMove(edit.coreBurn, from, to);
+    return { ...edit, coreBurn: coreBurn.moves.length ? coreBurn : undefined };
+  }
+  return recordSwap(edit, from, to);
+}
+
 /** Swaps (or with `replacement` null, removes) an exercise in the waiting plan, remembered if the plan is rebuilt. */
 export async function swapInPlan(from: WorkoutExercise, replacement: WorkoutExercise | null): Promise<void> {
   const [input, plan] = await Promise.all([loadGenerateInput(), db.workouts.where('status').equals('planned').first()]);
@@ -198,14 +210,42 @@ export async function swapInPlan(from: WorkoutExercise, replacement: WorkoutExer
   const exercises = replacement ? plan.exercises.map((x) => (x.id === from.id ? replacement : x)) : plan.exercises.filter((x) => x.id !== from.id);
   await db.workouts.update(plan.id, { exercises, estimatedMinutes: estimateMinutes(exercises) });
   const key = await planKey(input);
-  await saveDayEdits({ [key]: recordSwap(input.profile.dayEdits?.[key], from.exerciseId, replacement?.exerciseId ?? null) });
+  await saveDayEdits({ [key]: editAfterSwap(input.profile.dayEdits?.[key], from.exerciseId, replacement?.exerciseId ?? null, !!from.circuit) });
 }
 
 /** Swaps (or removes) an exercise in a forecast day; the forecast rebuilds around it. */
-export async function swapOnDay(day: number, from: string, to: string | null): Promise<void> {
+export async function swapOnDay(day: number, from: Pick<WorkoutExercise, 'exerciseId' | 'circuit'>, to: string | null): Promise<void> {
   const profile = await db.profile.get('me');
   const key = dayKey(day);
-  await saveDayEdits({ [key]: recordSwap(profile?.dayEdits?.[key], from, to) });
+  await saveDayEdits({ [key]: editAfterSwap(profile?.dayEdits?.[key], from.exerciseId, to, !!from.circuit) });
+}
+
+/** Adds a core burn to the end of the waiting plan, kept if the plan is rebuilt. */
+export async function addCoreBurnToPlan(burn: WorkoutExercise[], minutes: number, rounds: number): Promise<void> {
+  const [input, plan] = await Promise.all([loadGenerateInput(), db.workouts.where('status').equals('planned').first()]);
+  if (!plan) return;
+  const exercises = [...plan.exercises.filter((e) => !e.circuit), ...burn];
+  await db.workouts.update(plan.id, { exercises, estimatedMinutes: estimateMinutes(exercises) });
+  const key = await planKey(input);
+  await saveDayEdits({ [key]: { ...input.profile.dayEdits?.[key], coreBurn: { minutes, rounds, moves: burn.map((e) => e.exerciseId) } } });
+}
+
+/** Takes the core burn off the waiting plan. */
+export async function removeCoreBurnFromPlan(): Promise<void> {
+  const [input, plan] = await Promise.all([loadGenerateInput(), db.workouts.where('status').equals('planned').first()]);
+  if (!plan) return;
+  const exercises = plan.exercises.filter((e) => !e.circuit);
+  await db.workouts.update(plan.id, { exercises, estimatedMinutes: estimateMinutes(exercises) });
+  const key = await planKey(input);
+  const edit = input.profile.dayEdits?.[key];
+  if (edit) await saveDayEdits({ [key]: { ...edit, coreBurn: undefined } });
+}
+
+/** Sets (or with null, clears) the core burn on a forecast day. */
+export async function setCoreBurnOnDay(day: number, burn: { minutes: number; moves: string[]; rounds?: number } | null): Promise<void> {
+  const profile = await db.profile.get('me');
+  const key = dayKey(day);
+  await saveDayEdits({ [key]: { ...profile?.dayEdits?.[key], coreBurn: burn ?? undefined } });
 }
 
 /** Rebuilds the waiting plan after a settings change, unless a workout is under way. */

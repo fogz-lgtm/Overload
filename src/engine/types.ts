@@ -144,6 +144,8 @@ export interface DayEdit {
   avoid?: string[];
   /** Exercises swapped out (`to` null: removed), in the order they were made. */
   swaps?: { from: string; to: string | null }[];
+  /** A core burn added to the end: its length, the moves picked and how many rounds. */
+  coreBurn?: { minutes: number; moves: string[]; rounds?: number };
 }
 
 /**
@@ -251,6 +253,8 @@ export interface WorkoutExercise {
   /** Plain-language reason for the prescription. */
   rationale: string;
   notes?: string;
+  /** Exercises sharing a circuit are done round by round, one set of each in turn (a core burn). */
+  circuit?: string;
 }
 
 export interface Workout {

@@ -468,3 +468,28 @@
   margin-top: 10px;
   line-height: 1.45;
 }
+
+/* ── Core burn in a plan ── */
+.today-burn-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 8px 2px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-weight: 650;
+  font-size: 14px;
+}
+.today-burn-head > svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.today-burn-head .faint {
+  font-weight: 500;
+}
+.today-burn-add {
+  align-self: flex-start;
+  margin: 6px 0 0 -4px;
+  gap: 7px;
+  min-height: 40px;
+}

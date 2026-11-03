@@ -1,7 +1,8 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { BodyMap, Figure, MuscleThumb, targetFill } from '../components/BodyMap';
+import { CoreBurnSheet } from '../components/CoreBurnSheet';
 import { SwapSheet } from '../components/ExerciseSheets';
 import { SwipeHint, SwipeRow, type SwipeAction } from '../components/SwipeRow';
 import { Icon, type IconName } from '../components/Icon';
@@ -10,7 +11,22 @@ import { ExerciseVideo } from '../components/ExerciseVideo';
 import { DayPills, SplitSheet } from '../components/SplitSheet';
 import { db } from '../db/db';
 import { eraseAll } from '../db/demo';
-import { generateAndSave, loadProjection, recentDayTypes, rerollDays, rerollPlan, saveSplit, startEmptyWorkout, startWorkout, swapInPlan, swapOnDay } from '../db/repo';
+import {
+  addCoreBurnToPlan,
+  generateAndSave,
+  loadProjection,
+  recentDayTypes,
+  removeCoreBurnFromPlan,
+  rerollDays,
+  rerollPlan,
+  saveSplit,
+  setCoreBurnOnDay,
+  startEmptyWorkout,
+  startWorkout,
+  swapInPlan,
+  swapOnDay,
+} from '../db/repo';
+import type { CoreBurnPlan } from '../engine/coreBurn';
 import { detectPRs, weekStreak } from '../engine/analytics';
 import { DAY_TYPES, dayTypeOf, FOCUS_LABEL, nextRotationIndex, splitDays, splitName as rotationName, splitOrder, type Focus } from '../engine/generator';
 import { flattenSets } from '../engine/history';
@@ -418,6 +434,37 @@ function targetText(we: WorkoutExercise, ex: Exercise | undefined, profile: Prof
   };
 }
 
+/** Number shown beside a planned exercise: main lifts count from 1, and so does the core burn. */
+function listNumber(list: WorkoutExercise[], we: WorkoutExercise): number {
+  return list.filter((x) => !!x.circuit === !!we.circuit).indexOf(we) + 1;
+}
+
+/** The divider above a planned core burn. */
+function BurnHead({ moves, onRemove }: { moves: WorkoutExercise[]; onRemove: () => void }) {
+  const rounds = Math.max(...moves.map((m) => m.sets.length));
+  return (
+    <li className="today-burn-head">
+      <Icon name="flame" size={16} />
+      <span className="grow">
+        Core burn <span className="faint">· {moves.length} moves × {rounds} rounds</span>
+      </span>
+      <button type="button" className="btn sm ghost" onClick={onRemove}>
+        Remove
+      </button>
+    </li>
+  );
+}
+
+const burnToast = (burn: CoreBurnPlan) => `Core burn added · ${burn.exercises.length} moves × ${burn.rounds} rounds`;
+
+function BurnAdd({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" className="btn ghost sm today-burn-add" onClick={onClick}>
+      <Icon name="flame" size={16} /> Add a core burn
+    </button>
+  );
+}
+
 /** Swipe actions on a planned exercise: swap it, or take it out. */
 function rowActions(onSwap: () => void, onRemove?: () => void): SwipeAction[] {
   const actions: SwipeAction[] = [{ label: 'Swap', icon: 'swap', tone: 'accent', onClick: onSwap }];
@@ -493,6 +540,7 @@ function PlanCard({
 }) {
   const [preview, setPreview] = useState<WorkoutExercise | null>(null);
   const [swapFor, setSwapFor] = useState<WorkoutExercise | null>(null);
+  const [burnOpen, setBurnOpen] = useState(false);
   const [whyOpen, setWhyOpen] = useState(false);
   const [timeOpen, setTimeOpen] = useState(false);
 
@@ -561,10 +609,20 @@ function PlanCard({
           const e = exercises[we.exerciseId];
           const t = targetText(we, e, profile);
           return (
-            <li key={we.id}>
+            <Fragment key={we.id}>
+            {we.circuit && plan.exercises[i - 1]?.circuit !== we.circuit && (
+              <BurnHead
+                moves={plan.exercises.filter((x) => x.circuit)}
+                onRemove={async () => {
+                  await removeCoreBurnFromPlan();
+                  toast('Core burn removed', { icon: 'trash' });
+                }}
+              />
+            )}
+            <li>
               <SwipeRow actions={rowActions(() => setSwapFor(we), plan.exercises.length > 1 ? () => void remove(we) : undefined)} onSwipe={() => setSwapFor(we)}>
               <button type="button" className="today-ex" onClick={() => setPreview(we)}>
-                <span className="today-ex-idx display">{i + 1}</span>
+                <span className="today-ex-idx display">{listNumber(plan.exercises, we)}</span>
                 {e && <MuscleThumb primary={e.primary} secondary={e.secondary} size={42} />}
                 <span className="grow" style={{ minWidth: 0 }}>
                   <span className="today-ex-name">{e?.name ?? we.exerciseId}</span>
@@ -580,9 +638,11 @@ function PlanCard({
               </button>
               </SwipeRow>
             </li>
+            </Fragment>
           );
         })}
       </ol>
+      {plan.exercises.length > 0 && !plan.exercises.some((x) => x.circuit) && <BurnAdd onClick={() => setBurnOpen(true)} />}
       {plan.exercises.length === 0 && <p className="small faint">Nothing fits these settings — try another focus or gym.</p>}
       {plan.exercises.length > 0 && <SwipeHint text="Swipe an exercise left to swap it for one that works the same muscles." />}
 
@@ -621,6 +681,19 @@ function PlanCard({
           await swapInPlan(target, replacement);
           haptics.tap();
           toast(`Swapped in ${exercises[replacement.exerciseId]?.name ?? 'exercise'}`, { icon: 'swap' });
+        }}
+      />
+      <CoreBurnSheet
+        open={burnOpen}
+        exclude={plan.exercises.map((x) => x.exerciseId)}
+        exercises={exercises}
+        units={profile.units}
+        onClose={() => setBurnOpen(false)}
+        onAdd={async (burn) => {
+          setBurnOpen(false);
+          await addCoreBurnToPlan(burn.exercises, burn.minutes, burn.rounds);
+          haptics.success();
+          toast(burnToast(burn), { icon: 'flame', tone: 'accent' });
         }}
       />
     </section>
@@ -1005,12 +1078,13 @@ function UpcomingCard({
   const w = entry.workout;
   const [timeOpen, setTimeOpen] = useState(false);
   const [swapFor, setSwapFor] = useState<WorkoutExercise | null>(null);
+  const [burnOpen, setBurnOpen] = useState(false);
   const label = dayLabel(entry.day, today);
   const when = label === 'Today' || label === 'Tomorrow' ? label.toLowerCase() : label;
   // The waiting plan is a real workout; a forecast keeps the change as an edit and rebuilds around it.
   const change = async (we: WorkoutExercise, replacement: WorkoutExercise | null) => {
     if (entry.isPlan) await swapInPlan(we, replacement);
-    else await swapOnDay(entry.day, we.exerciseId, replacement?.exerciseId ?? null);
+    else await swapOnDay(entry.day, we, replacement?.exerciseId ?? null);
   };
   const remove = async (we: WorkoutExercise) => {
     await change(we, null);
@@ -1048,10 +1122,21 @@ function UpcomingCard({
           const e = exercises[we.exerciseId];
           const t = targetText(we, e, profile);
           return (
-            <li key={`${we.exerciseId}-${i}`}>
+            <Fragment key={`${we.exerciseId}-${i}`}>
+            {we.circuit && w.exercises[i - 1]?.circuit !== we.circuit && (
+              <BurnHead
+                moves={w.exercises.filter((x) => x.circuit)}
+                onRemove={async () => {
+                  if (entry.isPlan) await removeCoreBurnFromPlan();
+                  else await setCoreBurnOnDay(entry.day, null);
+                  toast(`Core burn removed from ${when}`, { icon: 'trash' });
+                }}
+              />
+            )}
+            <li>
               <SwipeRow actions={rowActions(() => setSwapFor(we), w.exercises.length > 1 ? () => void remove(we) : undefined)} onSwipe={() => setSwapFor(we)}>
               <Link to={`/library/${we.exerciseId}`} className="today-ex" draggable={false}>
-                <span className="today-ex-idx display">{i + 1}</span>
+                <span className="today-ex-idx display">{listNumber(w.exercises, we)}</span>
                 {e && <MuscleThumb primary={e.primary} secondary={e.secondary} size={42} />}
                 <span className="grow" style={{ minWidth: 0 }}>
                   <span className="today-ex-name">{e?.name ?? we.exerciseId}</span>
@@ -1066,9 +1151,11 @@ function UpcomingCard({
               </Link>
               </SwipeRow>
             </li>
+            </Fragment>
           );
         })}
       </ol>
+      {!w.exercises.some((x) => x.circuit) && <BurnAdd onClick={() => setBurnOpen(true)} />}
 
       <SwipeHint text="Swipe an exercise left to swap it for one that works the same muscles." />
 
@@ -1097,6 +1184,20 @@ function UpcomingCard({
           await change(target, replacement);
           haptics.tap();
           toast(`Swapped in ${exercises[replacement.exerciseId]?.name ?? 'exercise'} for ${when}`, { icon: 'swap' });
+        }}
+      />
+      <CoreBurnSheet
+        open={burnOpen}
+        exclude={w.exercises.map((x) => x.exerciseId)}
+        exercises={exercises}
+        units={profile.units}
+        onClose={() => setBurnOpen(false)}
+        onAdd={async (burn) => {
+          setBurnOpen(false);
+          if (entry.isPlan) await addCoreBurnToPlan(burn.exercises, burn.minutes, burn.rounds);
+          else await setCoreBurnOnDay(entry.day, { minutes: burn.minutes, rounds: burn.rounds, moves: burn.exercises.map((x) => x.exerciseId) });
+          haptics.success();
+          toast(`${burnToast(burn)} for ${when}`, { icon: 'flame', tone: 'accent' });
         }}
       />
     </section>

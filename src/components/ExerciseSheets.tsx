@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { loadGenerateInput } from '../db/repo';
+import { burnMove, coreRole } from '../engine/coreBurn';
 import { isAvailable, planExercise, swapOptions, type GenerateInput } from '../engine/generator';
 import { MUSCLES, MUSCLE_IDS } from '../engine/muscles';
 import type { Exercise, MuscleId, WorkoutExercise } from '../engine/types';
@@ -44,7 +45,12 @@ export function SwapSheet({
 }) {
   const input = useGenerateInput(!!target);
   const current = target ? exercises[target.exerciseId] : undefined;
-  const options = useMemo(() => (input && current ? swapOptions(current, input, inWorkout, 10) : []), [input, current, inWorkout]);
+  // In a core burn, only other core moves fit the circuit.
+  const inBurn = !!target?.circuit;
+  const options = useMemo(
+    () => (input && current ? swapOptions(current, input, inWorkout, inBurn ? 30 : 10).filter((o) => !inBurn || coreRole(o)).slice(0, 10) : []),
+    [input, current, inWorkout, inBurn],
+  );
   return (
     <Sheet open={!!target} onClose={onClose} title="Swap exercise" subtitle={current ? `Alternatives to ${current.name} that work the same muscles` : undefined}>
       {!input ? (
@@ -67,7 +73,7 @@ export function SwapSheet({
                 const sets = target!.sets;
                 const remaining = sets.filter((s) => s.kind === 'working' && !s.drop && !s.done).length || 3;
                 const warmup = sets.some((s) => s.kind === 'warmup') && !sets.some((s) => s.done);
-                onPick(planExercise(o, input, remaining, warmup));
+                onPick(target!.circuit ? burnMove(o, input, remaining, target!.circuit) : planExercise(o, input, remaining, warmup));
               }}
             />
           ))}

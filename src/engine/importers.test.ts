@@ -446,6 +446,14 @@ describe('matchExercise — Gravl names against the library', () => {
     expect(name('Kettlebell Alternating Row')).toBe('Kettlebell Row');
   });
 
+  it('finds the bodyweight core staples', () => {
+    expect(name('Crunches')).toBe('Crunch');
+    expect(name('Bicycle Crunch')).toBe('Bicycle Crunch');
+    expect(name('Russian Twist')).toBe('Russian Twist');
+    expect(name('Leg Raise')).toBe('Lying Leg Raise');
+    expect(name('Hanging Leg Raise')).toBe('Hanging Leg Raise');
+  });
+
   it('knows an incline dumbbell row is chest-supported', () => {
     expect(name('Incline Dumbbell Row')).toBe('Chest-Supported Dumbbell Row');
   });
@@ -453,7 +461,6 @@ describe('matchExercise — Gravl names against the library', () => {
   it('does not stretch to a different movement', () => {
     expect(name('Dumbbell Upright Row')).toBeNull();
     expect(name('Dumbbell Incline Fly')).toBeNull();
-    expect(name('Leg Raise')).toBeNull();
     expect(name('Bicep Curl to Shoulder Press')).toBeNull();
   });
 });

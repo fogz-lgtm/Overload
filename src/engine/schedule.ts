@@ -1,4 +1,5 @@
-import { applyDayEdit, dayTypeOf, generateWorkout, withDayEdit, type GenerateInput, type GeneratedWorkout } from './generator';
+import { withCoreBurn } from './coreBurn';
+import { applyDayEdit, dayTypeOf, estimateMinutes, generateWorkout, withDayEdit, type GenerateInput, type GeneratedWorkout } from './generator';
 import { computeRecovery } from './recovery';
 import type { Activity, DayType, MuscleId, PerformedSet, Profile, Workout } from './types';
 import { dayKey } from './util';
@@ -143,7 +144,7 @@ export function projectWorkouts(input: ProjectionInput, until: number): Projecte
         },
         edit,
       );
-      workout = applyDayEdit(generateWorkout(dayInput), edit, dayInput);
+      workout = withCoreBurn(applyDayEdit(generateWorkout(dayInput), edit, dayInput), edit?.coreBurn, dayInput, estimateMinutes);
     }
     if (!workout.exercises.length) continue;
     out.push({ day, workout, isPlan });

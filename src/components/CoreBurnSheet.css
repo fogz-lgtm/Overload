@@ -1,0 +1,33 @@
+.cb-summary {
+  margin: 0;
+  line-height: 1.5;
+}
+.cb-moves {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.cb-moves li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 4px;
+}
+.cb-moves .grow {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.cb-name {
+  font-weight: 620;
+  font-size: 15px;
+}
+.cb-target {
+  flex-shrink: 0;
+  font-weight: 650;
+  font-size: 14px;
+  color: var(--text-2);
+  text-align: right;
+}

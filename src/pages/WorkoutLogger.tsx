@@ -1,9 +1,12 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { MuscleThumb } from '../components/BodyMap';
 import { AddExerciseSheet, SwapSheet } from '../components/ExerciseSheets';
 import { SwipeRow } from '../components/SwipeRow';
+import { CoreBurnSheet } from '../components/CoreBurnSheet';
+import { currentExercise, nextAfter, ROUND_REST_SEC } from '../engine/coreBurn';
+import { isTimed as timedMove } from '../engine/progression';
 import { releaseRestAudio, restStarted, setRest, startRestTrack, stopRestTrack, useRest, type RestInfo } from '../audio/restAlert';
 import { useExerciseVideo, VideoSheet } from '../components/ExerciseVideo';
 import { Icon } from '../components/Icon';
@@ -47,6 +50,7 @@ export function WorkoutLogger() {
   const [demoFor, setDemoFor] = useState<Exercise | null>(null);
   const [swapFor, setSwapFor] = useState<WorkoutExercise | null>(null);
   const [adding, setAdding] = useState(false);
+  const [burning, setBurning] = useState(false);
   const [summary, setSummary] = useState<{ prs: PR[]; workout: Workout } | null>(null);
   const now = useNow(rest ? 250 : 1000);
 
@@ -114,7 +118,10 @@ export function WorkoutLogger() {
   const allSets = w.exercises.flatMap((e) => e.sets);
   const doneCount = allSets.filter((s) => s.done).length;
   const progress = allSets.length ? doneCount / allSets.length : 0;
-  const currentEx = w.exercises.find((e) => e.sets.some((s) => !s.done));
+  // Straight through, except a core burn goes round by round.
+  const currentEx = currentExercise(w.exercises);
+  const mainCount = w.exercises.filter((e) => !e.circuit).length;
+  const burnMoves = w.exercises.filter((e) => e.circuit);
   const [kind] = splitName(w.name);
 
   function patchSet(weId: string, setId: string, patch: Partial<SetEntry>) {
@@ -140,6 +147,28 @@ export function WorkoutLogger() {
       if (r.note) setNotes((n) => ({ ...n, [we.id]: r.note! }));
     }
     update((cur) => ({ ...cur, exercises: cur.exercises.map((e) => (e.id === we.id ? { ...e, sets } : e)) }));
+
+    if (we.circuit) {
+      // A circuit: on to the next move, round by round.
+      const after = nextAfter(w!.exercises.map((e) => (e.id === we.id ? { ...e, sets } : e)), we.id, idx);
+      if (!after) {
+        beginRest(null);
+        haptics.success();
+        return;
+      }
+      if (after.index !== idx || after.we.id === we.id) haptics.success();
+      const nextSet = after.we.sets[after.index]!;
+      const move = ex!.byId[after.we.exerciseId];
+      const amount = move && timedMove(move) ? `${nextSet.targetReps} s` : `${nextSet.targetWeightKg > 0 ? `${formatWeight(nextSet.targetWeightKg, units)} × ` : ''}${nextSet.targetReps}`;
+      const label = `${move?.name ?? 'Next move'} · ${amount}`;
+      if (profile?.style?.autoRest === false) {
+        beginRest(null);
+        return;
+      }
+      const pause = after.pause ?? ROUND_REST_SEC;
+      beginRest({ endsAt: Date.now() + pause * 1000, total: pause, next: label, detail: label });
+      return;
+    }
 
     const nextInEx = sets.find((x, i) => i > idx && !x.done);
     const exIdx = w!.exercises.findIndex((e) => e.id === we.id);
@@ -188,6 +217,17 @@ export function WorkoutLogger() {
 
   function removeSet(we: WorkoutExercise, setId: string) {
     update((cur) => ({ ...cur, exercises: cur.exercises.map((e) => (e.id === we.id ? { ...e, sets: e.sets.filter((s) => s.id !== setId) } : e)) }));
+  }
+
+  async function removeBurn() {
+    const logged = w!.exercises.filter((e) => e.circuit).flatMap((e) => e.sets).filter((s) => s.done).length;
+    if (logged > 0 && !(await ask({ title: 'Remove the core burn?', body: `Its ${logged} logged ${logged === 1 ? 'set goes' : 'sets go'} too.`, confirm: 'Remove', tone: 'danger' }))) return;
+    if (rest && w!.exercises.some((e) => e.circuit)) beginRest(null);
+    update((cur) => {
+      const list = cur.exercises.filter((e) => !e.circuit);
+      return { ...cur, exercises: list, estimatedMinutes: estimateMinutes(list) };
+    });
+    toast('Core burn removed', { icon: 'trash' });
   }
 
   async function removeExercise(target: WorkoutExercise) {
@@ -273,14 +313,18 @@ export function WorkoutLogger() {
       <div className="lg-body">
         {w.exercises.map((we, i) => {
           const exercise = ex.byId[we.exerciseId];
+          const burnStart = !!we.circuit && w.exercises[i - 1]?.circuit !== we.circuit;
+          const burnIndex = burnMoves.indexOf(we);
           const complete = we.sets.length > 0 && we.sets.every((s) => s.done);
           const expanded = open[we.id] ?? !complete;
           return (
+            <Fragment key={we.id}>
+            {burnStart && <BurnHeader moves={burnMoves} onRemove={removeBurn} />}
             <ExerciseCard
-              key={we.id}
               we={we}
               index={i}
               count={w.exercises.length}
+              position={we.circuit ? `Core burn · ${burnIndex + 1} of ${burnMoves.length}` : `${i + 1} of ${mainCount}`}
               exercise={exercise}
               units={units}
               note={notes[we.id]}
@@ -298,6 +342,7 @@ export function WorkoutLogger() {
               onDemo={() => exercise && setDemoFor(exercise)}
               weights={weights}
             />
+            </Fragment>
           );
         })}
 
@@ -317,6 +362,11 @@ export function WorkoutLogger() {
         <button type="button" className="btn block" onClick={() => setAdding(true)}>
           <Icon name="plus" size={18} /> Add exercise
         </button>
+        {burnMoves.length === 0 && (
+          <button type="button" className="btn block" onClick={() => setBurning(true)}>
+            <Icon name="flame" size={18} /> Add a core burn
+          </button>
+        )}
         <button
           type="button"
           className="btn ghost danger block"
@@ -424,6 +474,23 @@ export function WorkoutLogger() {
         }}
       />
 
+      <CoreBurnSheet
+        open={burning}
+        exclude={w.exercises.map((e) => e.exerciseId)}
+        exercises={ex.byId}
+        units={units}
+        onClose={() => setBurning(false)}
+        onAdd={(burn) => {
+          setBurning(false);
+          update((cur) => {
+            const list = [...cur.exercises.filter((e) => !e.circuit), ...burn.exercises];
+            return { ...cur, exercises: list, estimatedMinutes: estimateMinutes(list) };
+          });
+          haptics.success();
+          toast(`Core burn added · ${burn.exercises.length} moves × ${burn.rounds} rounds`, { icon: 'flame', tone: 'accent' });
+        }}
+      />
+
       <AddExerciseSheet
         open={adding}
         exercises={ex.list}
@@ -465,10 +532,13 @@ function ExerciseCard({
   onRemove,
   onDemo,
   weights,
+  position,
 }: {
   we: WorkoutExercise;
   index: number;
   count: number;
+  /** "2 of 5", or "Core burn · 1 of 4". */
+  position?: string;
   exercise?: Exercise;
   units: Profile['units'];
   note?: string;
@@ -515,7 +585,7 @@ function ExerciseCard({
           {exercise && <MuscleThumb primary={exercise.primary} secondary={exercise.secondary} size={44} />}
           <span className="grow" style={{ minWidth: 0 }}>
             <span className="eyebrow">
-              {index + 1} of {count}
+              {position ?? `${index + 1} of ${count}`}
               {exercise ? ` · ${exercise.primary.map((m) => MUSCLES[m].name).join(', ')}` : ''}
             </span>
             <span className="lg-ex-name">{exercise?.name ?? we.exerciseId}</span>
@@ -648,6 +718,29 @@ function ExerciseCard({
         </>
       )}
     </section>
+  );
+}
+
+/** Heads the core burn: which round it's on, and a way to drop it. */
+function BurnHeader({ moves, onRemove }: { moves: WorkoutExercise[]; onRemove: () => void }) {
+  const rounds = Math.max(...moves.map((m) => m.sets.length));
+  const done = Math.min(...moves.map((m) => m.sets.filter((s) => s.done).length));
+  const finished = moves.every((m) => m.sets.every((s) => s.done));
+  return (
+    <div className="lg-burn">
+      <span className="lg-burn-icon" aria-hidden="true">
+        <Icon name="flame" size={18} />
+      </span>
+      <span className="grow">
+        <h2 className="lg-burn-title">Core burn</h2>
+        <span className="small muted">
+          {finished ? 'All rounds done' : `Round ${Math.min(rounds, done + 1)} of ${rounds}`} · one move straight into the next
+        </span>
+      </span>
+      <button type="button" className="btn sm ghost" onClick={onRemove}>
+        Remove
+      </button>
+    </div>
   );
 }
 

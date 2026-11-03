@@ -379,3 +379,32 @@
 .lg-demo svg {
   fill: currentColor;
 }
+
+/* ── Core burn ── */
+.lg-burn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 4px 0;
+}
+.lg-burn-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+.lg-burn .grow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.lg-burn-title {
+  font-size: 17px;
+}

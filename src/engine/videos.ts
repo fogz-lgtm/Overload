@@ -129,6 +129,14 @@ export const EXERCISE_VIDEOS: Record<string, string> = {
   'dumbbell-side-bend': 'UUQHeBRE_Wo', // Dumbbell Side Bend - Core / Abs - Bodybuilding.com
   'dead-bug': 'bxn9FBrt4-A', // How to do a Dead Bug
   'dumbbell-crunch': 'GnOtkztXWQs', // How To Do: Dumbbell Crunch - Floor
+  crunch: 'GWIEON0VSaY', // How To Do A Crunch Properly
+  'bicycle-crunch': '1we3bh9uhqY', // How to do a Bicycle Crunch
+  'reverse-crunch': 'nYcE7-Dhpzk', // Reverse Crunch: How To (3 steps to proper form)
+  'lying-leg-raise': 'SuIxXbKnwx4', // How To Do A LYING LEG RAISE
+  'hollow-hold': 'W3E2SBg1ViQ', // How to Hollow Body Hold! (Easy & Hard Versions)
+  'mountain-climber': 'gW-q50V6Z_0', // Mountain Climbers: How To (3 steps to proper form)
+  'russian-twist': 'jjyR6Z1U4dA', // Russian Twist - Proper Form & Technique
+  'v-up': 'iP2fjvG0g3w', // Exercise Tutorial - V-Up
   'turkish-get-up': 'ZutpEZ2B7Uc', // How to do a Kettlebell Turkish Get Up - Nuffield Health
 };
 
